@@ -1,0 +1,33 @@
+# Entornos virtuales de Python
+venv/
+env/
+.venv/
+
+# Archivos de caché y compilación de Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Archivos de entorno y secretos
+.env
+.env.local
+.secrets/
+*.pem
+
+# Archivos temporales y privados
+.DS_Store
+Thumbs.db
+*.lnk
+GEMINI.md
+*.lnk
+
+# Configuración del IDE
+.vscode/
+.idea/
+
+# Datos y logs
+*.log
+database_data/
+mongo_data/
+redis_data/
+cassandra_data/

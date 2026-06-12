@@ -1,0 +1,6 @@
+motor
+redis
+cassandra-driver
+fastapi
+uvicorn
+python-dotenv

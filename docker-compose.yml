@@ -1,0 +1,44 @@
+services:
+  mongodb:
+    image: mongo:latest
+    container_name: ecocanje_mongodb
+    ports:
+      - "27017:27017"
+    restart: unless-stopped
+
+  redis:
+    image: redis:alpine
+    container_name: ecocanje_redis
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+
+  cassandra:
+    image: cassandra:latest
+    container_name: ecocanje_cassandra
+    ports:
+      - "9042:9042"
+    environment:
+      - CASSANDRA_CLUSTER_NAME=EcoCanjeCluster
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: ecocanje_backend
+    ports:
+      - "8000:8000"
+    environment:
+      - MONGO_URI=mongodb://mongodb:27017/
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - CASSANDRA_HOSTS=cassandra
+    depends_on:
+      - mongodb
+      - redis
+      - cassandra
+    volumes:
+      - .:/workspace
+      - ./backend:/app
+    restart: unless-stopped
