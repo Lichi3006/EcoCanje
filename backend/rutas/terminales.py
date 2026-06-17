@@ -54,6 +54,22 @@ async def busqueda_mongo(consulta, mensaje: str, proyeccion = None):
     }
 
 # =========================================================================
+# RUTAS DE AUDITORÍA
+# =========================================================================
+
+@router.get("/todas")
+async def listar_todas():
+    """
+    Lista todos los nodos de recepción y sus terminales.
+    Útil para auditoría y para conocer los IDs disponibles.
+    """
+    return await busqueda_mongo(
+        consulta={},
+        proyeccion={"_id": 0},
+        mensaje="Diccionario completo de nodos de recepción y terminales."
+    )
+
+# =========================================================================
 # PATRÓN Q1
 # =========================================================================
 
@@ -127,6 +143,8 @@ async def Q2_consultar_materiales_autorizados(id_nodo: str):
     
     proyeccion = {
         "_id": 0,
+        "id_nodo": 1,
+        "nombre": 1,
         "terminales_fisicas.id_terminal": 1,
         "terminales_fisicas.estado_operativo": 1,
         "terminales_fisicas.materiales_autorizados": 1

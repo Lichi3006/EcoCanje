@@ -6,7 +6,7 @@ import os
 
 # Importamos nuestro diccionario de conexiones aislado y las rutas modulares
 from database import db_clients
-from rutas import terminales, telemetria
+from rutas import terminales, telemetria, transacciones, perfiles
 
 app = FastAPI(
     title="ECOCANJE API",
@@ -17,6 +17,8 @@ app = FastAPI(
 # Unimos de forma limpia las subrutas al archivo maestro
 app.include_router(terminales.router)
 app.include_router(telemetria.router)
+app.include_router(transacciones.router)
+app.include_router(perfiles.router)
 
 @app.on_event("startup")
 async def startup_event():
@@ -34,8 +36,34 @@ async def startup_event():
     cassandra_hosts = os.getenv("CASSANDRA_HOSTS", "cassandra").split(",")
     db_clients["cassandra_cluster"] = Cluster(contact_points=cassandra_hosts)
     try:
-        db_clients["cassandra_session"] = db_clients["cassandra_cluster"].connect()
-        print("[OK] Cassandra Conectado")
+        session = db_clients["cassandra_cluster"].connect()
+        # Conectar los cables: Nos aseguramos de que el keyspace exista antes de arrancar
+        session.execute("CREATE KEYSPACE IF NOT EXISTS ecocanje_ks WITH replication = {'class':'SimpleStrategy', 'replication_factor' : 1};")
+        session.set_keyspace("ecocanje_ks")
+        
+        # Creamos las tablas si no existen (para que el edge pueda sincronizar sin depender del seed)
+        session.execute("""
+        CREATE TABLE IF NOT EXISTS depositos_ledger (
+            id_usuario text, timestamp timestamp, id_deposito text, id_terminal text,
+            tipo_material text, peso_kg float, monto_acreditado float, firma_ecdsa text,
+            PRIMARY KEY (id_usuario, timestamp)
+        ) WITH CLUSTERING ORDER BY (timestamp DESC);
+        """)
+        session.execute("""
+        CREATE TABLE IF NOT EXISTS eventos_terminales (
+            id_terminal text, id_evento text, tipo_evento text, valor_numerico float, alerta_estado text, timestamp_local text,
+            PRIMARY KEY (id_terminal, id_evento)
+        );
+        """)
+        session.execute("""
+        CREATE TABLE IF NOT EXISTS saturaciones_por_comuna (
+            comuna int, fecha_dia text, hora_saturacion text, id_terminal text, nombre_nodo text, tipo_material text, nivel_porcentaje float,
+            PRIMARY KEY (comuna, fecha_dia, hora_saturacion)
+        ) WITH CLUSTERING ORDER BY (fecha_dia DESC, hora_saturacion DESC);
+        """)
+        
+        db_clients["cassandra_session"] = session
+        print("[OK] Cassandra Conectado (Keyspace: ecocanje_ks, Tablas verificadas)")
     except Exception as e:
         print(f"[ADVERTENCIA] Cassandra aún inicializando: {e}")
 
@@ -47,6 +75,37 @@ async def shutdown_event():
         await db_clients["redis"].close()
     if "cassandra_cluster" in db_clients:
         db_clients["cassandra_cluster"].shutdown()
+
+# =========================================================================
+# RUTAS DE CAOS (CHAOS ENGINEERING / FAULT INJECTION)
+# =========================================================================
+
+@app.post("/caos/{container_name}/{action}", tags=["Ingeniería del Caos"])
+async def caos_control_contenedor(container_name: str, action: str):
+    """
+    Ruta para Ingeniería de Caos. Permite apagar (stop) o prender (start) 
+    contenedores específicos (ej. ecocanje_mongodb, ecocanje_cassandra)
+    usando el SDK de Docker, para demostrar tolerancia a fallos en vivo.
+    """
+    import docker
+    try:
+        client = docker.from_env()
+        container = client.containers.get(container_name)
+        if action == "stop":
+            container.stop()
+            return {"mensaje": f"Servicio {container_name} detenido exitosamente (simulación de caída)."}
+        elif action == "start":
+            container.start()
+            return {"mensaje": f"Servicio {container_name} iniciado correctamente (recuperación)."}
+        else:
+            return {"error": "Acción no válida. Usa 'stop' o 'start'."}
+    except Exception as e:
+        return {"error": f"Fallo al intentar aplicar ingeniería de caos: {str(e)}"}
+
+from fastapi.responses import HTMLResponse
+
+from panel_backend import panel_router
+app.include_router(panel_router)
 
 @app.get("/health", tags=["Infraestructura"])
 async def health_check():

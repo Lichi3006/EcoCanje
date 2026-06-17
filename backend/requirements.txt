@@ -1,6 +1,7 @@
 motor
 redis
-cassandra-driver
+cassandra-driver==3.29.1
+docker==7.1.0
 fastapi
 uvicorn
 python-dotenv

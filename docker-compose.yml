@@ -39,6 +39,26 @@ services:
       - redis
       - cassandra
     volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
       - .:/workspace
       - ./backend:/app
     restart: unless-stopped
+
+  edge_service:
+    build:
+      context: ./edge_service
+      dockerfile: Dockerfile
+    container_name: ecocanje_edge
+    environment:
+      - BACKEND_URL=http://backend:8000/telemetria/eventos
+      - TERMINAL_ID=TERM-CABA-005
+      - SQLITE_DB_PATH=ecocanje_edge.db
+    depends_on:
+      - backend
+    stdin_open: true
+    tty: true
+    ports:
+      - "8001:8001"
+    restart: unless-stopped
+
+

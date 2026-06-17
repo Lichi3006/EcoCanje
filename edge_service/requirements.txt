@@ -1,0 +1,6 @@
+cryptography
+requests
+qrcode
+fastapi
+uvicorn
+jinja2
