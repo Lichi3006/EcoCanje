@@ -33,7 +33,7 @@ Debido a que este repositorio constituye una arquitectura de validación académ
 - **Cámaras de Inteligencia Artificial:** La latencia y certeza de clasificación de materiales (PET/Aluminio) está simulada mediante retardos matemáticos aleatorios en el código de la terminal, generando telemetría sintética.
 - **Escaneo de Código QR:** La interacción óptica de la cámara del teléfono celular se abstrajo en una carga REST directa enviando el token (ej. `QR-A1B2C3`) contra el endpoint transaccional del backend.
 - **Aplicación Móvil Ciudadana:** El front-end del celular (iOS/Android) no está implementado. El consumo de sus rutas (Mapas, Catálogo de Materiales e Historial de la Billetera) se audita puramente a nivel API a través del Panel del Backend.
-- **Tableros Logísticos (Recolectores):** Las pantallas y ruteos GPS de los camiones de basura están fuera de alcance. El sistema se limita a calcular y exponer matemáticamente el semáforo de estado (Verde/Amarillo/Rojo) de los contenedores utilizando Redis.
+- **Tableros Logísticos (Recolectores):** Las pantallas y ruteos GPS de los camiones de basura están fuera de alcance. El sistema se limita a calcular y exponer matemáticamente el semáforo de estado (Verde/Amarillo/Rojo) de los contenedores utilizando Redis, el cual es consumido crudo tanto por el sistema logístico como por la app móvil.
 
 ---
 
@@ -43,7 +43,7 @@ El orquestador en la nube consolida los 9 patrones transaccionales definidos en 
 
 - **[Q1] Búsqueda Geoespacial (MongoDB):** Resolución O(log N) mediante índices `2dsphere` para ubicar terminales cercanas por proximidad matemática (Haversine).
 - **[Q2] Validación de Materiales (MongoDB):** Acceso atómico de ultra-baja latencia para consultar tarifas y materiales aceptados en el Edge.
-- **[Q3] Semáforo de Capacidad en Vivo (Redis):** Caché en memoria operando en microsegundos para reportar si la terminal física está en estado Verde, Amarillo o Rojo, dictando el ruteo logístico.
+- **[Q3] Semáforo de Capacidad en Vivo (Redis):** Caché en memoria operando en microsegundos para reportar si la terminal física está en estado Verde, Amarillo o Rojo, dictando el ruteo logístico y alertando a los ciudadanos.
 - **[Q4] Validación Atómica QR (Redis):** Ejecución de scripts `Lua` para resolver la lógica de un solo uso (Anti-Replay) destruyendo el token efímero instantáneamente.
 - **[Q5] Escritura Dual Inmutable (Cassandra + Mongo):** Implementación SAGA. Registra la transacción de reciclaje inmutablemente en el motor columnar y acredita el saldo económico en la billetera virtual.
 - **[Q6] Historial Ciudadano (Cassandra):** Recuperación paginada del ledger físico ordenado cronológicamente para mostrar el extracto de entregas en la aplicación.
@@ -67,7 +67,7 @@ La terminal física ("El Tacho") no depende de una conexión a internet constant
 Para prevenir la saturación óptica del código impreso y mitigar ataques de doble gasto (Double-Spending):
 - **Short-Lived Handshake:** La terminal sube la carga pesada (JSON con firmas ECDSA y métricas) a **Redis**, recibiendo a cambio un Token corto representativo.
 - **Validación Atómica (Q4):** Al transferir el código corto resultante al backend (ej. `QR-A1B2C3`), el servidor extrae el JSON original usando un script atómico **Lua** e inmediatamente elimina la clave (TTL de 120s), impidiendo definitivamente que el mismo código físico pueda ser procesado dos veces.
-- **Semáforo Logístico (Q3):** Redis también actúa como un semáforo de latencia ultra-baja (sub-milisegundo) para reportar la capacidad física actual de los contenedores a los camiones recolectores sin congestionar los motores pesados.
+- **Semáforo Multi-Consumo (Q3):** Redis también actúa como un semáforo de latencia ultra-baja (sub-milisegundo) para reportar la capacidad física actual de los contenedores, evitando que un ciudadano viaje a un tacho lleno y alertando a los camiones recolectores.
 
 ### 3. Escritura Dual (Patrón SAGA)
 Una vez validado el código efímero en la capa caché, el sistema impacta financieramente el registro bifurcando los datos resolviendo el patrón de **Escritura Inmutable (Q5)**:
@@ -85,6 +85,7 @@ Fuera del dominio central (Core Backend) se contempla la existencia de una Aplic
 
 - **Mapas en Vivo (Q1):** La App consulta el backend para renderizar marcadores de los tachos más cercanos en un radio métrico utilizando las coordenadas GPS del celular del usuario.
 - **Catálogo y Tarifas (Q2):** La App muestra los materiales permitidos y el valor de canje actual consultando a MongoDB.
+- **Disponibilidad de Tachos (Q3):** La App consume el semáforo en tiempo real alojado en Redis para advertirle al ciudadano si el contenedor destino se encuentra con saturación crítica (Rojo) antes de desplazarse hacia él.
 - **Billetera y Extracto (Q6):** La App extrae desde Apache Cassandra la lista inmutable histórica de depósitos realizados por el ciudadano para generar su ticket y ver su evolución financiera.
 
 ---
