@@ -25,17 +25,18 @@ async def startup_event():
     print("Iniciando infraestructura de datos de ECOCANJE...")
     
     mongo_uri = os.getenv("MONGO_URI", "mongodb://mongodb:27017/")
-    db_clients["mongo_client"] = AsyncIOMotorClient(mongo_uri)
+    db_clients["mongo_client"] = AsyncIOMotorClient(mongo_uri, serverSelectionTimeoutMS=2000)
     db_clients["mongodb"] = db_clients["mongo_client"]["ecocanje_db"]
     print("[OK] MongoDB Conectado")
     
+    import redis.asyncio as redis_async
     redis_host = os.getenv("REDIS_HOST", "redis")
-    db_clients["redis"] = redis.Redis(host=redis_host, port=6379, decode_responses=True)
+    db_clients["redis"] = redis_async.Redis(host=redis_host, port=6379, decode_responses=True)
     print("[OK] Redis Conectado")
     
     cassandra_hosts = os.getenv("CASSANDRA_HOSTS", "cassandra").split(",")
-    db_clients["cassandra_cluster"] = Cluster(contact_points=cassandra_hosts)
     try:
+        db_clients["cassandra_cluster"] = Cluster(contact_points=cassandra_hosts)
         session = db_clients["cassandra_cluster"].connect()
         # Conectar los cables: Nos aseguramos de que el keyspace exista antes de arrancar
         session.execute("CREATE KEYSPACE IF NOT EXISTS ecocanje_ks WITH replication = {'class':'SimpleStrategy', 'replication_factor' : 1};")
@@ -148,7 +149,27 @@ async def factory_reset():
         # Correr seed.py para plantar datos base limpios
         resultado = subprocess.run([sys.executable, "seed.py"], capture_output=True, text=True)
         if resultado.returncode == 0:
-            return {"status": "SUCCESS", "message": "Bases de datos purgadas y reconstruidas a estado semilla."}
+            # Reiniciar contenedores Docker automáticamente
+            mensajes_docker = []
+            try:
+                import docker
+                client = docker.from_env()
+                contenedores = ["ecocanje_mongodb", "ecocanje_redis", "ecocanje_cassandra", "ecocanje_edge"]
+                for c_name in contenedores:
+                    try:
+                        container = client.containers.get(c_name)
+                        container.restart()
+                        mensajes_docker.append(f"{c_name} OK")
+                    except Exception as ce:
+                        mensajes_docker.append(f"{c_name} FALLO: {str(ce)}")
+            except Exception as e:
+                mensajes_docker.append(f"No se pudo conectar al socket de Docker: {str(e)}")
+
+            return {
+                "status": "SUCCESS", 
+                "message": "Bases de datos purgadas y reconstruidas a estado semilla.",
+                "docker_restarts": mensajes_docker
+            }
         else:
             return {"status": "ERROR", "message": "Fallo al correr seed.py", "logs": resultado.stderr}
     except Exception as e:

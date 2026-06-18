@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from typing import List
 from pydantic import BaseModel
-from database import db_clients
+from database import db_clients, get_cassandra_session
 
 router = APIRouter(prefix="/telemetria", tags=["Dominio: Telemetría IoT (Cassandra)"])
 
@@ -23,12 +23,15 @@ async def Q8_ingesta_telemetria_iot(eventos: List[EventoTelemetria]):
     Recibe el lote (batch) de eventos del daemon local de la terminal (SQLite)
     y los almacena secuencialmente en Cassandra.
     """
-    sesion_cassandra = db_clients.get("cassandra_session")
+    try:
+        sesion_cassandra = get_cassandra_session()
+    except ConnectionError:
+        sesion_cassandra = None
+    if not sesion_cassandra:
+        return {"error": "Cassandra no disponible en el cluster. Puede estar inicializando (esperar ~60s) o estar caida."}
+
     mongo_db = db_clients.get("mongodb")
     redis_client = db_clients.get("redis")
-    
-    if not sesion_cassandra:
-        return {"error": "Cassandra no disponible en el clúster."}
 
     eventos_insertados = 0
     saturaciones_detectadas = 0
@@ -84,12 +87,25 @@ async def Q8_ingesta_telemetria_iot(eventos: List[EventoTelemetria]):
                             (comuna, fecha_dia, hora_saturacion, id_terminal, nombre_nodo, tipo_material, nivel_porcentaje) 
                             VALUES (%s, %s, %s, %s, %s, %s, %s)
                         """
-                        # Asumimos que los contenedores inteligentes reciben "RECICLABLES"
-                        sesion_cassandra.execute_async(cql_q7, (
-                            comuna, fecha_dia, hora_saturacion, evento.id_terminal, nombre_nodo, "RECICLABLES", evento.valor_numerico
-                        ))
-                        saturaciones_detectadas += 1
-                        
+                        cassandra_q7_ok = False
+                        if sesion_cassandra:
+                            try:
+                                sesion_cassandra.execute(cql_q7, (
+                                    comuna, fecha_dia, hora_saturacion, evento.id_terminal, nombre_nodo, "RECICLABLES", evento.valor_numerico
+                                ))
+                                saturaciones_detectadas += 1
+                                cassandra_q7_ok = True
+                            except Exception as e_cass:
+                                print(f"[FALLBACK Q7] Cassandra falló al ingestarlo: {e_cass}")
+                                
+                        if not cassandra_q7_ok:
+                            print("[FALLBACK Q7] Cassandra caída, guardando saturación pendiente en Mongo...")
+                            await mongo_db["Q7_Fallback_Cassandra"].insert_one({
+                                "comuna": comuna, "fecha_dia": fecha_dia, "hora_saturacion": hora_saturacion, 
+                                "id_terminal": evento.id_terminal, "nombre_nodo": nombre_nodo, 
+                                "tipo_material": "RECICLABLES", "nivel_porcentaje": evento.valor_numerico
+                            })
+                            saturaciones_detectadas += 1
         except Exception as e:
             print(f"[ERROR CASSANDRA] Fallo ingestando evento {evento.id_evento}: {e}")
             
@@ -111,11 +127,32 @@ async def Q7_deteccion_saturaciones_por_comuna(numero_comuna: int, fecha_desde: 
     el recorrido logístico de vaciado de los camiones en la ciudad.
     (Ejemplo formato de fecha: '2026-05-01')
     """
-    sesion_cassandra = db_clients.get("cassandra_session")
+    try:
+        sesion_cassandra = get_cassandra_session()
+    except ConnectionError as e:
+        raise HTTPException(status_code=503, detail=str(e))
     if not sesion_cassandra:
-        raise HTTPException(status_code=500, detail="Servicio de Cassandra no disponible")
+        raise HTTPException(status_code=503, detail="Servicio de Cassandra no disponible")
         
     try:
+        # Primero revisamos si hay datos pendientes en Mongo (Fallback) y los subimos a Cassandra
+        mongo_db = db_clients.get("mongodb")
+        if mongo_db is not None:
+            pendientes = await mongo_db["Q7_Fallback_Cassandra"].find({"comuna": numero_comuna}).to_list(length=None)
+            for p in pendientes:
+                cql_insert = """
+                    INSERT INTO saturaciones_por_comuna 
+                    (comuna, fecha_dia, hora_saturacion, id_terminal, nombre_nodo, tipo_material, nivel_porcentaje) 
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                """
+                sesion_cassandra.execute(cql_insert, (
+                    p["comuna"], p["fecha_dia"], p["hora_saturacion"], 
+                    p["id_terminal"], p["nombre_nodo"], p["tipo_material"], p["nivel_porcentaje"]
+                ))
+                await mongo_db["Q7_Fallback_Cassandra"].delete_one({"_id": p["_id"]})
+            if pendientes:
+                print(f"[RECUPERACION Q7] Se subieron {len(pendientes)} registros pendientes desde Mongo hacia Cassandra.")
+
         # Consulta CQL para series temporales. 
         # Utiliza la partition key (comuna) y clustering keys (fecha_dia).
         cql = """
@@ -145,8 +182,33 @@ async def Q7_deteccion_saturaciones_por_comuna(numero_comuna: int, fecha_desde: 
             "resultados": lista_resultados
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error ejecutando analítica en Cassandra: {e}")
-
+        db_clients["cassandra_session"] = None  # Invalida la sesion vieja para forzar reconexion
+        print(f"[FALLBACK Q7] Cassandra fallo ({e}). Consultando semaforos en Redis...")
+        redis_client = db_clients.get("redis")
+        if not redis_client:
+            raise HTTPException(status_code=500, detail=f"Error ejecutando analitica en Cassandra y sin Redis: {e}")
+            
+        try:
+            lista_resultados = []
+            async for key in redis_client.scan_iter("cap:terminal:*"):
+                datos = await redis_client.hgetall(key)
+                if datos and datos.get("estado_semaforo") in ["Rojo", "CRITICAL"]:
+                    lista_resultados.append({
+                        "id_terminal": key.replace("cap:terminal:", ""),
+                        "nombre_nodo": "Fallback Redis (Vivo)",
+                        "tipo_material": "N/A",
+                        "nivel_porcentaje": float(datos.get("nivel_actual", 0)),
+                        "hora_saturacion": "EN VIVO",
+                        "fecha_dia": "EN VIVO"
+                    })
+            return {
+                "mensaje": f"FALLBACK ACTIVADO: Cassandra offline. Mostrando saturaciones vivas en RAM (Redis).",
+                "filtro_temporal": "Tiempo Real",
+                "total_incidentes": len(lista_resultados),
+                "resultados": lista_resultados
+            }
+        except Exception as fallback_error:
+            raise HTTPException(status_code=500, detail=f"Caída catastrófica (Cassandra y Redis out): {fallback_error}")
 # =========================================================================
 # PATRÓN Q8 (Lectura): Consulta de Telemetría por Terminal
 # =========================================================================
@@ -156,9 +218,12 @@ async def Q8_consulta_telemetria_terminal(id_terminal: str):
     Patrón Q8 (Lectura Cloud): Consulta los eventos de telemetría IoT
     almacenados en Cassandra para una terminal específica.
     """
-    sesion_cassandra = db_clients.get("cassandra_session")
+    try:
+        sesion_cassandra = get_cassandra_session()
+    except ConnectionError as e:
+        raise HTTPException(status_code=503, detail=str(e))
     if not sesion_cassandra:
-        raise HTTPException(status_code=500, detail="Servicio de Cassandra no disponible")
+        raise HTTPException(status_code=503, detail="Servicio de Cassandra no disponible")
         
     try:
         cql = """
@@ -185,5 +250,6 @@ async def Q8_consulta_telemetria_terminal(id_terminal: str):
             "resultados": lista_resultados
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error consultando telemetría en Cassandra: {e}")
+        db_clients["cassandra_session"] = None  # Invalida sesion para forzar reconexion
+        raise HTTPException(status_code=500, detail=f"Error consultando telemetria en Cassandra: {e}")
 

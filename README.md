@@ -45,11 +45,11 @@ El orquestador en la nube consolida los 9 patrones transaccionales definidos en 
 - **[Q2] Validación de Materiales (MongoDB):** Acceso atómico de ultra-baja latencia para consultar tarifas y materiales aceptados en el Edge.
 - **[Q3] Semáforo de Capacidad en Vivo (Redis):** Caché en memoria operando en microsegundos para reportar si la terminal física está en estado Verde, Amarillo o Rojo, dictando el ruteo logístico y alertando a los ciudadanos.
 - **[Q4] Validación Atómica QR (Redis):** Ejecución de scripts `Lua` para resolver la lógica de un solo uso (Anti-Replay) destruyendo el token efímero instantáneamente.
-- **[Q5] Escritura Dual Inmutable (Cassandra + Mongo):** Patrón de persistencia que registra la transacción de reciclaje inmutablemente en el motor columnar y simultáneamente acredita el saldo económico en la billetera virtual.
+- **[Q5] Escritura Dual con Fallback en Cascada (Cassandra + Mongo + Redis):** Registra el reciclaje en el ledger inmutable y suma el saldo en la billetera virtual simultáneamente. Si un motor falla, aplica un Fail-Open degradando hacia la capa de almacenamiento de mayor durabilidad disponible en ese milisegundo (Disco o RAM).
 - **[Q6] Historial Ciudadano (Cassandra):** Recuperación paginada del ledger físico ordenado cronológicamente para mostrar el extracto de entregas en la aplicación.
-- **[Q7] Analítica de Saturaciones por Comuna (Cassandra):** Ingesta enriquecida de incidentes para que el Gobierno diagnostique cuellos de botella geográficos a gran escala.
+- **[Q7] Analítica de Saturaciones por Comuna (Cassandra):** Ingesta enriquecida de incidentes para que la administración diagnostique cuellos de botella geográficos a gran escala.
 - **[Q8] Ingesta de Telemetría IoT (Edge + Cassandra):** Sincronización masiva de eventos por lotes (Sync Daemon) desde la base SQLite del contenedor inteligente hacia la nube.
-- **[Q9] Reconciliación Auditada (Mongo vs Cassandra):** Algoritmo de reparación de estado (Chaos Engineering). Recalcula el saldo actual comparando el estado vivo en RAM contra el registro inmutable histórico para sanear desincronizaciones de red.
+- **[Q9] Promoción Jerárquica y Reconciliación (Mongo + Cassandra + Redis):** Job de reparación de estado (Chaos Engineering). Escanea la salud de la tríada de motores y drena los depósitos atrapados en cachés o discos temporales (por caídas previas) hacia arriba en la pirámide de persistencia hasta consolidarlos en el ledger inmutable de Cassandra.
 
 ---
 
@@ -69,15 +69,28 @@ Para prevenir la saturación óptica del código impreso y mitigar ataques de do
 - **Validación Atómica (Q4):** Cuando el ciudadano escanea ese código y su celular envía el token (`QR-A1B2C3`) de regreso al backend, el servidor extrae el JSON original desde la clave de Redis (`handshake:QR-A1B2C3`) utilizando un script atómico **Lua** e inmediatamente la elimina (la cual tiene un TTL de 120 segundos). Esto impide matemáticamente que un mismo código físico pueda ser cobrado dos veces por distintos usuarios.
 - **Semáforo Multi-Consumo (Q3):** A medida que la IoT sincroniza su telemetría con la Nube, el sistema actualiza de forma atómica la capacidad del tacho en la memoria RAM de **Redis** (ej. `HSET capacidad:T1`). Esto genera un semáforo de estado (Verde: Vacío, Amarillo: Alerta, Rojo: Lleno) que opera con latencia sub-milisegundo (O(1)). Gracias a esta arquitectura *In-Memory*, miles de teléfonos celulares y camiones recolectores pueden consultar frenéticamente si el tacho está lleno sin sobrecargar jamás los motores de base de datos en disco (Mongo/Cassandra), asegurando una experiencia fluida al usuario final.
 
-### 3. Escritura Dual y Desacople
-Una vez validado el código efímero en la capa caché, el sistema impacta financieramente el registro bifurcando los datos resolviendo el patrón de **Escritura Inmutable (Q5)**:
-- **MongoDB (Operacional / OLTP):** Incrementa el saldo de incentivos del usuario de forma casi instantánea (`$inc`).
-- **Apache Cassandra (Analítica / OLAP / Ledger):** Actúa como el gran libro mayor de contabilidad inmutable gubernamental. Registra anexos secuenciales (Append-Only) del peso, terminal y firma criptográfica. Nunca se borra una fila.
+### 3. Transacción Distribuida en 3 Motores (Redis + Mongo + Cassandra)
+El canje del QR por saldo es el flujo más crítico del ecosistema y está diseñado para atravesar **tres motores de bases de datos diferentes** en una misma petición, previniendo fraudes y caídas:
+1. **Redis (Capa Caché - Q4):** Primero destruye el token efímero de forma atómica para prevenir ataques de doble gasto.
+2. **MongoDB (Operacional / OLTP):** Si Redis da luz verde, incrementa el saldo del usuario de forma casi instantánea (`$inc`).
+3. **Apache Cassandra (Auditoría / OLAP - Q5):** Finalmente, bifurca el flujo resolviendo la **Escritura Dual**, dejando un registro inmutable (Append-Only) en el gran libro mayor de la plataforma para auditoría técnica.
 
-### 4. Reconciliación Financiera (Chaos Engineering)
-Si el Datacenter sufriese una desincronización abrupta (ej. caída de MongoDB durante una escritura dual), el sistema cuenta con un algoritmo asíncrono de **Reconciliación (Q9)** que recalcula el saldo exacto del ciudadano cruzando los balances en memoria contra la sumatoria de todas las transacciones históricas en Cassandra.
+### 4. Job de Promoción Jerárquica (Tolerancia a Fallos Extrema - Q9)
+Dado que Q5 aplica Escritura Dual, el sistema prevé activamente el escenario de **fallos parciales y totales** (ej. Cassandra no levanta, o MongoDB sufre un apagón a mitad del día).
+Ante este escenario, el orquestador cuenta con el patrón **Q9 (Promoción Jerárquica)**, un job asíncrono que escanea el estado de los tres motores y ejecuta uno de tres caminos posibles según la durabilidad:
+
+- **CAMINO 1 (MongoDB a Cassandra):** Si Cassandra está viva, ejecuta el flujo principal. Promueve cualquier depósito estancado en discos secundarios (MongoDB) hacia el ledger inmutable distribuido (Cassandra) y ejecuta la conciliación financiera completa comparando las sumatorias de ambos motores.
+- **CAMINO 2 (Redis a Cassandra):** Si Cassandra está viva y MongoDB murió, rescata los tickets de los ciudadanos atrapados en la memoria RAM volátil de Redis y los drena directamente al ledger inmutable para garantizar su salvataje.
+- **CAMINO 3 (Redis a MongoDB):** Si Cassandra está muerta por completo pero Mongo y Redis siguen activos, Q9 no puede llegar al ledger inmutable. Como medida de protección, drena los tickets desde la RAM (Redis) y los escribe en Disco (Mongo) para elevar su durabilidad. Cuando Cassandra resucite, el CAMINO 1 los llevará a su destino final.
+
+### 5. Tolerancia a Fallos e Ingeniería del Caos (Chaos Engineering)
+Tal como fue delineado en el Documento Conceptual de la Etapa 1, la arquitectura incorpora mecanismos activos de resiliencia ante la pérdida transitoria de los motores físicos:
+- **Fallback en Cascada (Q5):** Q5 nunca frena la operación. Si Cassandra (Ledger) falla, deposita temporalmente en MongoDB (Disco Secundario). Si MongoDB también falla, degrada y encola en Redis (Memoria Volátil).
+- **Auto-Healing y Promoción de Datos (Q9):** Descripto en el punto anterior. Un solo job se encarga de subir los datos por la pirámide de persistencia automáticamente a medida que los servidores vuelven a conectarse.
+- **Reconexión Perezosa (Lazy Reconnection):** Cada llamada a `get_cassandra_session()` verifica internamente si la sesión sigue activa con un ping liviano. Si el socket está roto (contenedor reiniciado por Docker), invalida el cluster viejo, crea uno nuevo y reintenta hasta 3 veces con 2 segundos de pausa entre ellos antes de rendirse. El Backend nunca necesita ser reiniciado por consola para recuperarse de una caída de Cassandra.
 
 ---
+
 
 ## <img src="https://api.iconify.design/heroicons/device-phone-mobile.svg?color=white" width="24" height="24" align="center"/> Integración Externa (Aplicación Móvil)
 
@@ -95,17 +108,17 @@ Fuera del dominio central (Core Backend) se contempla la existencia de una Aplic
 El código fuente está segmentado en dos dominios lógicos principales, imitando la arquitectura distribuida del mundo real:
 
 ```text
-📦 EcoCanje
- ┣ 📂 backend/               # Nube: Orquestador Central (FastAPI)
- ┃  ┣ 📂 rutas/              # Endpoints divididos por dominio (telemetria.py, transacciones.py)
- ┃  ┣ 📜 main.py             # Punto de entrada de la API y conexiones a DBs
- ┃  ┣ 📜 panel_backend.py    # UI HTML/JS para simular consultas del analista
- ┃  ┗ 📜 seed.py             # Script de inyección del catálogo maestro
- ┣ 📂 edge_service/          # Borde: Firmware simulado de la Terminal IoT
- ┃  ┣ 📜 Panel_IoT.py        # UI HTML/JS para simular la botonera de hardware
- ┃  ┣ 📜 terminal.py         # Lógica core C++/Python (Sensores, ECDSA, QR)
- ┃  ┗ 📜 sync_daemon.py      # Proceso en segundo plano para sincronizar a la nube
- ┗ 📜 docker-compose.yml     # Orquestación de infraestructura (Redis, Mongo, Cassandra)
+🗀 EcoCanje
+ ┣ 🗁 backend/               # Nube: Orquestador Central (FastAPI)
+ ┃  ┣ 🗁 rutas/              # Endpoints divididos por dominio (telemetria.py, transacciones.py)
+ ┃  ┣  🗎 main.py             # Punto de entrada de la API y conexiones a DBs
+ ┃  ┣  🗎 panel_backend.py    # UI HTML/JS para simular consultas del analista
+ ┃  ┗  🗎 seed.py             # Script de inyección del catálogo maestro
+ ┣ 🗁 edge_service/          # Borde: Firmware simulado de la Terminal IoT
+ ┃  ┣  🗎 Panel_IoT.py        # UI HTML/JS para simular la botonera de hardware
+ ┃  ┣  🗎 terminal.py         # Lógica core C++/Python (Sensores, ECDSA, QR)
+ ┃  ┗  🗎 sync_daemon.py      # Proceso en segundo plano para sincronizar a la nube
+ ┗  🗎 docker-compose.yml     # Orquestación de infraestructura (Redis, Mongo, Cassandra)
 ```
 
 ---
@@ -122,10 +135,7 @@ docker compose up -d --build
 *Nota Técnica: Apache Cassandra (JVM) requiere de 40 a 60 segundos de inicialización en memoria antes de aceptar conexiones. Se recomienda esperar este lapso.*
 
 ### Paso 2: Sembrado de Datos Base (Seeding)
-Para inicializar el catálogo base (terminales, usuarios y tarifas), ejecutar:
-```bash
-docker compose exec backend python seed.py
-```
+Para inicializar el catálogo base (terminales, usuarios y tarifas), no es necesario ejecutar comandos en la consola. Simplemente abrí el **Panel Nube Backend** (`http://localhost:8000`), bajá hasta el final de la página y hacé clic en el botón rojo **"Pulsar Botón de Emergencia (Limpiar Todo y Restaurar a Semilla Cero)"**. Esto purgará la red, inyectará los datos maestros e iniciará el sistema limpio.
 
 ### Paso 3: Interfaces de Interacción (Paneles Mock)
 En un entorno de producción, las terminales no tendrían una página web y el backend solo respondería JSON. Sin embargo, para fines de auditoría y demostración académica, se construyeron dos **Paneles de Control (Mocks)** que permiten disparar los eventos y observar las bases de datos en tiempo real:
@@ -134,5 +144,5 @@ En un entorno de producción, las terminales no tendrían una página web y el b
   - *¿Para qué sirve?* Reemplaza la botonera física de chapa y la impresora de la máquina en la calle. 
   - Te permite simular que un ciudadano tira botellas (Sensores), emitir un Token y ejecutar el Daemon de sincronización manual para ver cómo el SQLite se vacía.
 - **[Panel Nube Backend] (`http://localhost:8000`)**: 
-  - *¿Para qué sirve?* Reemplaza a las aplicaciones móviles de los ciudadanos y a los tableros analíticos del gobierno. 
+  - *¿Para qué sirve?* Reemplaza a las aplicaciones móviles de los ciudadanos y a los tableros analíticos de la administración central. 
   - Te permite probar los 8 Patrones de Consulta (Q1-Q9) apretando un botón, además de incluir herramientas de Ingeniería de Caos (como apagar MongoDB en vivo para probar la resiliencia).
