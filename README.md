@@ -27,11 +27,13 @@ Este repositorio constituye la implementación técnica final para la cátedra d
 
 ## <img src="https://api.iconify.design/heroicons/beaker.svg?color=white" width="24" height="24" align="center"/> Alcance de la Prueba de Concepto (PoC)
 
-Debido a que este repositorio constituye una arquitectura de validación académica (Prueba de Concepto), ciertos procesos del hardware físico se encuentran virtualizados (Mocking) para permitir su ejecución en entornos de desarrollo aislados:
+Debido a que este repositorio constituye una arquitectura de validación académica (Prueba de Concepto), ciertos procesos del ecosistema físico y visual se encuentran virtualizados (Mocking) o fuera de alcance para focalizar el desarrollo estrictamente en la Ingeniería de Datos:
 
 - **Hardware y Botoneras Físicas:** Reemplazados por el Panel web del Edge IoT, el cual dispara los eventos lógicos del microcontrolador simulando la interacción ciudadana con la terminal.
 - **Cámaras de Inteligencia Artificial:** La latencia y certeza de clasificación de materiales (PET/Aluminio) está simulada mediante retardos matemáticos aleatorios en el código de la terminal, generando telemetría sintética.
-- **Escaneo de Código QR:** La interacción óptica de la cámara del teléfono móvil de un ciudadano se abstrajo en una carga REST directa enviando el token (ej. `QR-A1B2C3`) contra el endpoint transaccional del backend.
+- **Escaneo de Código QR:** La interacción óptica de la cámara del teléfono celular se abstrajo en una carga REST directa enviando el token (ej. `QR-A1B2C3`) contra el endpoint transaccional del backend.
+- **Aplicación Móvil Ciudadana:** El front-end del celular (iOS/Android) no está implementado. El consumo de sus rutas (Mapas, Catálogo de Materiales e Historial de la Billetera) se audita puramente a nivel API a través del Panel del Backend.
+- **Tableros Logísticos (Recolectores):** Las pantallas y ruteos GPS de los camiones de basura están fuera de alcance. El sistema se limita a calcular y exponer matemáticamente el semáforo de estado (Verde/Amarillo/Rojo) de los contenedores utilizando Redis.
 
 ---
 
