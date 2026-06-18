@@ -55,17 +55,17 @@ El orquestador en la nube consolida los 9 patrones transaccionales definidos en 
 
 ## <img src="https://api.iconify.design/heroicons/server-stack.svg?color=white" width="24" height="24" align="center"/> Arquitectura de Datos y Lógica del Sistema
 
-El sistema implementa una **Persistencia Políglota** estricta, derivando cada carga de trabajo transaccional al motor de base de datos que está matemáticamente optimizado para la tarea.
+El sistema implementa una **Persistencia Políglota** estricta, derivando cada carga de trabajo transaccional al motor de base de datos que está matemáticamente optimizado para la tarea. Además, el Borde (Terminal Física) y la Nube (Backend) operan como **entidades arquitectónicamente independientes y desacopladas**; la caída o saturación de un lado no bloquea las operaciones vitales del otro.
 
 ### 1. El Borde (Edge Computing y SQLite)
 La terminal física ("El Tacho") no depende de una conexión a internet constante para operar. 
-- Utiliza **SQLite** como una "caja negra" inmutable a nivel local para retener firmas criptográficas y acumular peso.
-- Si la nube se cae, la terminal continúa recibiendo reciclaje de los usuarios.
-- Implementa un proceso tipo daemon (`sync_daemon.py`) que purga el SQLite local únicamente cuando confirma la llegada de la telemetría a la nube **(Resolviendo el patrón Q8)**.
+- Utiliza **SQLite** como una bitácora de registro local de alta disponibilidad (análogo a la "caja negra" de un avión) para retener firmas criptográficas y acumular peso de forma persistente ante cortes de energía o caídas de red.
+- Si la nube se cae, la terminal continúa recibiendo reciclaje de los usuarios con total normalidad.
+- Implementa un proceso tipo daemon (`sync_daemon.py`) que purga el SQLite local únicamente cuando confirma la llegada exitosa de la telemetría al servidor en la nube **(Resolviendo el patrón Q8)**.
 
 ### 2. Flujo de Emisión de QR y Redis
 Para prevenir la saturación óptica del código impreso y mitigar ataques de doble gasto (Double-Spending):
-- **Short-Lived Handshake:** La terminal sube la carga pesada (JSON con firmas ECDSA y métricas) a **Redis**, recibiendo a cambio un Token corto representativo.
+- **Short-Lived Handshake:** La terminal Edge envía la carga pesada (JSON con firmas ECDSA y métricas) **al orquestador del Backend en la nube**, el cual la delega temporalmente a **Redis**, devolviendo a la terminal un Token corto representativo.
 - **Validación Atómica (Q4):** Al transferir el código corto resultante al backend (ej. `QR-A1B2C3`), el servidor extrae el JSON original usando un script atómico **Lua** e inmediatamente elimina la clave (TTL de 120s), impidiendo definitivamente que el mismo código físico pueda ser procesado dos veces.
 - **Semáforo Multi-Consumo (Q3):** Redis también actúa como un semáforo de latencia ultra-baja (sub-milisegundo) para reportar la capacidad física actual de los contenedores, evitando que un ciudadano viaje a un tacho lleno y alertando a los camiones recolectores.
 
