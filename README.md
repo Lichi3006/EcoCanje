@@ -19,11 +19,30 @@
 
 ---
 
-## <img src="https://api.iconify.design/heroicons/document-text.svg?color=white" width="24" height="24" align="center"/> Sobre este Repositorio
+## <img src="https://api.iconify.design/heroicons/document-text.svg?color=white" width="24" height="24" align="center"/> Contexto Académico y Propuesta Conceptual
 
-**EcoCanje** es un ecosistema integral de reciclaje urbano diseñado bajo el paradigma de computación distribuida (Edge-to-Cloud). Este repositorio contiene la implementación técnica completa de la **Etapa 2**, abarcando la orquestación de bases de datos políglotas en la nube y el simulador de hardware (Edge) que opera en las calles.
+Este repositorio constituye la implementación técnica final para la cátedra de **Ingeniería de Datos II**. Su objetivo académico principal es demostrar el dominio práctico de la **Persistencia Políglota**, diseñando una arquitectura donde cada patrón de consulta o carga de trabajo (Workload) se asigne estrictamente al motor de base de datos que resulte matemáticamente y algorítmicamente más eficiente para ese fin específico.
 
-El sistema fue diseñado con alta tolerancia a fallos, asincronía de datos y consistencia eventual para soportar desconexiones de red, evitando el bloqueo de terminales IoT y asegurando una trazabilidad inmutable mediante auditorías cruzadas.
+**El Ecosistema EcoCanje**
+EcoCanje es una solución tecnológica diseñada para revolucionar la gestión de residuos sólidos urbanos mediante la **gamificación e incentivos financieros**. La propuesta conceptual se basa en desplegar una red de terminales IoT ("Tachos Inteligentes") en la vía pública. Cuando un ciudadano deposita materiales (PET, Aluminio, Cartón), la máquina clasifica el material, lo pesa, y emite un token criptográfico impreso. El ciudadano escanea este comprobante con su celular y automáticamente recibe saldo en su billetera virtual.
+
+El presente código abarca exclusivamente el Core Backend en la nube y el simulador de hardware de la calle (Edge). Fue diseñado bajo premisas de alta disponibilidad y consistencia eventual, garantizando que si la nube gubernamental pierde conexión, los tachos inteligentes puedan seguir operando de forma 100% autónoma en la calle, sincronizando los datos en diferido sin perder la trazabilidad de los fondos.
+
+---
+
+## <img src="https://api.iconify.design/heroicons/map.svg?color=white" width="24" height="24" align="center"/> Patrones de Acceso Implementados
+
+El orquestador en la nube consolida los 9 patrones transaccionales definidos en el diseño conceptual, mapeados a su motor físico correspondiente:
+
+- **[Q1] Búsqueda Geoespacial (MongoDB):** Resolución O(log N) mediante índices `2dsphere` para ubicar terminales cercanas por proximidad matemática (Haversine).
+- **[Q2] Validación de Materiales (MongoDB):** Acceso atómico de ultra-baja latencia para consultar tarifas y materiales aceptados en el Edge.
+- **[Q3] Semáforo de Capacidad en Vivo (Redis):** Caché en memoria operando en microsegundos para reportar si la terminal física está en estado Verde, Amarillo o Rojo, dictando el ruteo logístico.
+- **[Q4] Validación Atómica QR (Redis):** Ejecución de scripts `Lua` para resolver la lógica de un solo uso (Anti-Replay) destruyendo el token efímero instantáneamente.
+- **[Q5] Escritura Dual Inmutable (Cassandra + Mongo):** Implementación SAGA. Registra la transacción de reciclaje inmutablemente en el motor columnar y acredita el saldo económico en la billetera virtual.
+- **[Q6] Historial Ciudadano (Cassandra):** Recuperación paginada del ledger físico ordenado cronológicamente para mostrar el extracto de entregas en la aplicación.
+- **[Q7] Analítica de Saturaciones por Comuna (Cassandra):** Ingesta enriquecida de incidentes para que el Gobierno diagnostique cuellos de botella geográficos a gran escala.
+- **[Q8] Ingesta de Telemetría IoT (Edge + Cassandra):** Sincronización masiva de eventos por lotes (Sync Daemon) desde la base SQLite del contenedor inteligente hacia la nube.
+- **[Q9] Reconciliación Auditada (Mongo vs Cassandra):** Algoritmo de reparación de estado (Chaos Engineering). Recalcula el saldo actual comparando el estado vivo en RAM contra el registro inmutable histórico para sanear desincronizaciones de red.
 
 ---
 
@@ -35,21 +54,61 @@ El sistema implementa una **Persistencia Políglota** estricta, derivando cada c
 La terminal física ("El Tacho") no depende de una conexión a internet constante para operar. 
 - Utiliza **SQLite** como una "caja negra" inmutable a nivel local para retener firmas criptográficas y acumular peso.
 - Si la nube se cae, la terminal continúa recibiendo reciclaje de los usuarios.
-- Implementa un proceso tipo daemon (`sync_daemon.py`) que purga el SQLite local únicamente cuando confirma la llegada de la telemetría a la nube.
+- Implementa un proceso tipo daemon (`sync_daemon.py`) que purga el SQLite local únicamente cuando confirma la llegada de la telemetría a la nube **(Resolviendo el patrón Q8)**.
 
 ### 2. Flujo de Emisión de QR y Redis
-Para prevenir la saturación óptica del código QR impreso y mitigar ataques de doble gasto (Double-Spending):
-- **Short-Lived Handshake:** La terminal sube la carga pesada (JSON con firmas ECDSA y métricas) a **Redis**, recibiendo a cambio un Token corto. 
-- Al escanear el QR, el backend extrae el JSON usando un script atómico **Lua** e inmediatamente elimina la clave (TTL de 120s), impidiendo definitivamente que el mismo papel físico pueda ser reclamado dos veces.
-- **Redis** también actúa como un semáforo de latencia ultra-baja (sub-milisegundo) para reportar la capacidad física actual de los contenedores a los camiones recolectores sin congestionar los motores pesados.
+Para prevenir la saturación óptica del código impreso y mitigar ataques de doble gasto (Double-Spending):
+- **Short-Lived Handshake:** La terminal sube la carga pesada (JSON con firmas ECDSA y métricas) a **Redis**, recibiendo a cambio un Token corto representativo.
+- **Validación Atómica (Q4):** Al transferir el código corto resultante al backend (ej. `QR-A1B2C3`), el servidor extrae el JSON original usando un script atómico **Lua** e inmediatamente elimina la clave (TTL de 120s), impidiendo definitivamente que el mismo código físico pueda ser procesado dos veces.
+- **Semáforo Logístico (Q3):** Redis también actúa como un semáforo de latencia ultra-baja (sub-milisegundo) para reportar la capacidad física actual de los contenedores a los camiones recolectores sin congestionar los motores pesados.
 
 ### 3. Escritura Dual (Patrón SAGA)
-Una vez validado el QR efímero en la capa caché, el sistema impacta financieramente el registro bifurcando los datos:
-- **MongoDB (Operacional / OLTP):** Incrementa el saldo de incentivos del usuario de forma casi instantánea (`$inc`) y permite las consultas geoespaciales (`2dsphere`) para ubicar terminales cercanas.
+Una vez validado el código efímero en la capa caché, el sistema impacta financieramente el registro bifurcando los datos resolviendo el patrón de **Escritura Inmutable (Q5)**:
+- **MongoDB (Operacional / OLTP):** Incrementa el saldo de incentivos del usuario de forma casi instantánea (`$inc`).
 - **Apache Cassandra (Analítica / OLAP / Ledger):** Actúa como el gran libro mayor de contabilidad inmutable gubernamental. Registra anexos secuenciales (Append-Only) del peso, terminal y firma criptográfica. Nunca se borra una fila.
 
 ### 4. Reconciliación Financiera (Chaos Engineering)
-Si el Datacenter sufriese una desincronización abrupta (ej. caída de MongoDB durante una escritura dual), el sistema cuenta con un algoritmo asíncrono de Reconciliación (Patrón Q9) que recalcula el saldo exacto del ciudadano cruzando los balances en memoria contra la sumatoria de todas las transacciones históricas en Cassandra.
+Si el Datacenter sufriese una desincronización abrupta (ej. caída de MongoDB durante una escritura dual), el sistema cuenta con un algoritmo asíncrono de **Reconciliación (Q9)** que recalcula el saldo exacto del ciudadano cruzando los balances en memoria contra la sumatoria de todas las transacciones históricas en Cassandra.
+
+---
+
+## <img src="https://api.iconify.design/heroicons/device-phone-mobile.svg?color=white" width="24" height="24" align="center"/> Integración Externa (Aplicación Móvil)
+
+Fuera del dominio central (Core Backend) se contempla la existencia de una Aplicación Móvil Ciudadana externa que consume los patrones expuestos por la API para proveer una experiencia fluida al usuario final:
+
+- **Mapas en Vivo (Q1):** La App consulta el backend para renderizar marcadores de los tachos más cercanos en un radio métrico utilizando las coordenadas GPS del celular del usuario.
+- **Catálogo y Tarifas (Q2):** La App muestra los materiales permitidos y el valor de canje actual consultando a MongoDB.
+- **Billetera y Extracto (Q6):** La App extrae desde Apache Cassandra la lista inmutable histórica de depósitos realizados por el ciudadano para generar su ticket y ver su evolución financiera.
+
+---
+
+## <img src="https://api.iconify.design/heroicons/beaker.svg?color=white" width="24" height="24" align="center"/> Alcance de la Prueba de Concepto (PoC)
+
+Debido a que este repositorio constituye una arquitectura de validación académica (Prueba de Concepto), ciertos procesos del hardware físico se encuentran virtualizados (Mocking) para permitir su ejecución en entornos de desarrollo aislados:
+
+- **Hardware y Botoneras Físicas:** Reemplazados por el Panel web del Edge IoT, el cual dispara los eventos lógicos del microcontrolador.
+- **Cámaras de Inteligencia Artificial:** La latencia y certeza de clasificación de materiales plásticos y de aluminio está simulada mediante retardos matemáticos aleatorios en el código de la terminal, generando telemetría sintética (ej. métrica `IA_LATENCIA_CLASIFICACION_MS`).
+- **Escaneo de Código QR:** La interacción óptica de la cámara del teléfono móvil de un ciudadano se abstrajo en una carga REST directa enviando el token (ej. `QR-A1B2C3`) contra el endpoint transaccional del backend.
+
+---
+
+## <img src="https://api.iconify.design/heroicons/folder-open.svg?color=white" width="24" height="24" align="center"/> Estructura de Directorios
+
+El código fuente está segmentado en dos dominios lógicos principales, imitando la arquitectura distribuida del mundo real:
+
+```text
+📦 EcoCanje
+ ┣ 📂 backend/               # Nube: Orquestador Central (FastAPI)
+ ┃  ┣ 📂 rutas/              # Endpoints divididos por dominio (telemetria.py, transacciones.py)
+ ┃  ┣ 📜 main.py             # Punto de entrada de la API y conexiones a DBs
+ ┃  ┣ 📜 panel_backend.py    # UI HTML/JS para simular consultas del analista
+ ┃  ┗ 📜 seed.py             # Script de inyección del catálogo maestro
+ ┣ 📂 edge_service/          # Borde: Firmware simulado de la Terminal IoT
+ ┃  ┣ 📜 Panel_IoT.py        # UI HTML/JS para simular la botonera de hardware
+ ┃  ┣ 📜 terminal.py         # Lógica core C++/Python (Sensores, ECDSA, QR)
+ ┃  ┗ 📜 sync_daemon.py      # Proceso en segundo plano para sincronizar a la nube
+ ┗ 📜 docker-compose.yml     # Orquestación de infraestructura (Redis, Mongo, Cassandra)
+```
 
 ---
 
@@ -58,7 +117,7 @@ Si el Datacenter sufriese una desincronización abrupta (ej. caída de MongoDB d
 Para levantar la infraestructura completa en cualquier computadora (Windows/Linux/Mac) con Docker instalado:
 
 ### Paso 1: Inicialización
-Posicionarse en el directorio raíz del proyecto y compilar los contenedores en modo asilado:
+Posicionarse en el directorio raíz del proyecto y compilar los contenedores en modo aislado:
 ```bash
 docker compose up -d --build
 ```
@@ -70,12 +129,12 @@ Para inicializar el catálogo base (terminales, usuarios y tarifas), ejecutar:
 docker compose exec backend python seed.py
 ```
 
-### Paso 3: Interfaces de Interacción (Mocks)
-Una vez estabilizada la red, los nodos de interacción quedan mapeados al Host principal:
-- **[Panel IoT Edge]**: Acceder a `http://localhost:8001`. Representa físicamente a la terminal inteligente ubicada en la vía pública. Permite generar cargas asíncronas y emitir Tokens.
-- **[Panel Nube Backend]**: Acceder a `http://localhost:8000`. Representa el clúster central del Datacenter. Contiene todos los métodos expuestos de los Patrones de Consulta (Q1 a Q9).
+### Paso 3: Interfaces de Interacción (Paneles Mock)
+En un entorno de producción, las terminales no tendrían una página web y el backend solo respondería JSON. Sin embargo, para fines de auditoría y demostración académica, se construyeron dos **Paneles de Control (Mocks)** que permiten disparar los eventos y observar las bases de datos en tiempo real:
 
-## <img src="https://api.iconify.design/heroicons/map.svg?color=white" width="24" height="24" align="center"/> Patrones de Acceso Implementados
-
-- **[Q1] Búsqueda Geoespacial Dinámica:** Resolución matemática O(log N) mediante fórmula de Haversine (`$nearSphere`) y cuadrículas de GeoHashing.
-- **[Q2] Validación de Materiales Autorizados:** Acceso atómico instantáneo O(1) vía índice B-Tree para control de UI en la aplicación móvil.
+- **[Panel IoT Edge] (`http://localhost:8001`)**: 
+  - *¿Para qué sirve?* Reemplaza la botonera física de chapa y la impresora de la máquina en la calle. 
+  - Te permite simular que un ciudadano tira botellas (Sensores), emitir un Token y ejecutar el Daemon de sincronización manual para ver cómo el SQLite se vacía.
+- **[Panel Nube Backend] (`http://localhost:8000`)**: 
+  - *¿Para qué sirve?* Reemplaza a las aplicaciones móviles de los ciudadanos y a los tableros analíticos del gobierno. 
+  - Te permite probar los 8 Patrones de Consulta (Q1-Q9) apretando un botón, además de incluir herramientas de Ingeniería de Caos (como apagar MongoDB en vivo para probar la resiliencia).
