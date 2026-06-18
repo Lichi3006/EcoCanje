@@ -80,7 +80,7 @@ async def volcado_redis_crudo():
     saga_parseada = [json.loads(item) for item in cola_saga]
     
     return {
-        "mensaje": "Radiografía en vivo de la memoria Redis",
+        "mensaje": "Estado en vivo de la memoria Redis",
         "1_capacidades_iot": capacidades,
         "2_tokens_qr_vivos": handshakes,
         "3_cola_saga_mongo_caido": saga_parseada
@@ -89,6 +89,52 @@ async def volcado_redis_crudo():
 # =========================================================================
 # PATRÓN Q4
 # =========================================================================
+
+@router.post("/crear-token-qr")
+async def crear_token_qr_iot(payload: dict):
+    """
+    Ruta interna para la Terminal IoT (Edge).
+    Recibe el payload completo de la transacción (kilos, firmas, id_terminal),
+    lo guarda en Redis con un TTL de 120s, y le devuelve un token corto a la máquina
+    para que dibuje el código QR en pantalla.
+    """
+    import uuid
+    redis_client = db_clients.get("redis")
+    if not redis_client:
+        return {"error": "Redis no disponible."}
+        
+    token = f"QR-{str(uuid.uuid4())[:6].upper()}"
+    clave_redis = f"handshake:{token}"
+    
+    # Insertar el diccionario como un Hash en Redis
+    await redis_client.hset(clave_redis, mapping=payload)
+    # Configurar el TTL de 120 segundos (2 minutos para escanear)
+    await redis_client.expire(clave_redis, 120)
+    
+    return {"token_qr": token}
+
+@router.post("/crear-token-qr")
+async def crear_token_qr_iot(payload: dict):
+    """
+    Ruta interna para la Terminal IoT (Edge).
+    Recibe el payload completo de la transacción (kilos, firmas, id_terminal),
+    lo guarda en Redis con un TTL de 120s, y le devuelve un token corto a la máquina
+    para que dibuje el código QR en pantalla.
+    """
+    import uuid
+    redis_client = db_clients.get("redis")
+    if not redis_client:
+        return {"error": "Redis no disponible."}
+        
+    token = f"QR-{str(uuid.uuid4())[:6].upper()}"
+    clave_redis = f"handshake:{token}"
+    
+    # Insertar el diccionario como un Hash en Redis
+    await redis_client.hset(clave_redis, mapping=payload)
+    # Configurar el TTL de 120 segundos (2 minutos para escanear)
+    await redis_client.expire(clave_redis, 120)
+    
+    return {"token_qr": token}
 
 @router.post("/canje-qr")
 async def Q4_validacion_atomica_qr(payload: QRHandshakePayload):
@@ -155,6 +201,7 @@ class RegistroEntregaPayload(BaseModel):
     id_terminal: str
     tipo_material: str
     peso_kg: float
+    monto_acreditado: float
     firma_ecdsa: str
     timestamp_local: int
 
@@ -166,26 +213,6 @@ async def Q5_registro_inmutable_entrega(payload: RegistroEntregaPayload):
     cassandra_session = db_clients.get("cassandra_session")
     mongo_db = db_clients.get("mongodb")
     redis_client = db_clients.get("redis")
-    
-    # 0. Lógica de Negocio Segura: El Backend calcula el precio, NO la terminal IoT.
-    precio_base = 10.0 # fallback
-    material_upper = payload.tipo_material.upper()
-    
-    # Intentamos leer la tarifa de Redis (caché)
-    if redis_client:
-        tarifa_cacheada = await redis_client.get(f"tarifa:{material_upper}")
-        if tarifa_cacheada:
-            precio_base = float(tarifa_cacheada)
-        elif mongo_db is not None:
-            # Si no está en Redis, la traemos de MongoDB
-            coleccion_tarifas = mongo_db["TarifasMateriales"]
-            tarifa_db = await coleccion_tarifas.find_one({"material": material_upper})
-            if tarifa_db:
-                precio_base = float(tarifa_db.get("precio_kg", 10.0))
-                # Guardamos en caché Redis por 1 hora
-                await redis_client.setex(f"tarifa:{material_upper}", 3600, precio_base)
-                
-    monto_calculado = float(payload.peso_kg * precio_base)
 
     # 1. Escritura Principal en Cassandra (Ledger inmutable)
     if cassandra_session:
@@ -198,7 +225,7 @@ async def Q5_registro_inmutable_entrega(payload: RegistroEntregaPayload):
             """
             cassandra_session.execute_async(cql, (
                 payload.id_usuario, payload.id_deposito, payload.id_terminal,
-                payload.tipo_material, payload.peso_kg, monto_calculado, payload.firma_ecdsa
+                payload.tipo_material, payload.peso_kg, payload.monto_acreditado, payload.firma_ecdsa
             ))
         except Exception as e:
             print(f"[ERROR CASSANDRA] Falló escritura del ledger: {e}")
@@ -217,7 +244,7 @@ async def Q5_registro_inmutable_entrega(payload: RegistroEntregaPayload):
             resultado = await coleccion_perfiles.update_one(
                 {"id_usuario": payload.id_usuario},
                 {
-                    "$inc": {"balance_incentivos": Decimal128(Decimal(str(monto_calculado)))},
+                    "$inc": {"balance_incentivos": Decimal128(Decimal(str(payload.monto_acreditado)))},
                     "$set": {"ultima_actualizacion": datetime.now(timezone.utc)}
                 }
             )
@@ -232,18 +259,17 @@ async def Q5_registro_inmutable_entrega(payload: RegistroEntregaPayload):
     if not saldo_actualizado and redis_client:
         import json
         payload_saga = payload.model_dump()
-        payload_saga["monto_acreditado"] = monto_calculado
         payload_saga["estado_saga"] = "PENDIENTE_DE_COBRO"
         
         # Encolamos en una lista de Redis para reintentos (LPUSH)
         await redis_client.lpush("cola_saga_saldos_pendientes", json.dumps(payload_saga))
         print(f"[SAGA] Saldo del usuario {payload.id_usuario} encolado en Redis para reintento automático.")
-
+        
     return {
-        "mensaje": "Proceso Q5 ejecutado.",
-        "ledger_cassandra": "Enviado",
-        "saldo_billetera_actualizado": saldo_actualizado,
-        "saga_redis_activado": not saldo_actualizado
+        "estado": "REGISTRADO",
+        "id_deposito": payload.id_deposito,
+        "monto_acreditado": payload.monto_acreditado,
+        "saga_status": "OK" if saldo_actualizado else "ENCOLADO"
     }
 
 # =========================================================================

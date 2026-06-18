@@ -3,8 +3,8 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Status-Work--In--Progress-orange" alt="Status">
-  <img src="https://img.shields.io/badge/Stage-Etapa_2-yellow" alt="Stage">
+  <img src="https://img.shields.io/badge/Status-Etapa_2_Completada-success" alt="Status">
+  <img src="https://img.shields.io/badge/Materia-Ingenier%C3%ADa_de_Datos_II-blue" alt="Stage">
 </p>
 
 <p align="center">
@@ -13,6 +13,7 @@
   <img src="https://img.shields.io/badge/MongoDB-4EA94B?style=for-the-badge&logo=mongodb&logoColor=white" alt="MongoDB">
   <img src="https://img.shields.io/badge/Redis-DC382D?style=for-the-badge&logo=redis&logoColor=white" alt="Redis">
   <img src="https://img.shields.io/badge/Cassandra-1287B1?style=for-the-badge&logo=apachecassandra&logoColor=white" alt="Cassandra">
+  <img src="https://img.shields.io/badge/SQLite-003B57?style=for-the-badge&logo=sqlite&logoColor=white" alt="SQLite">
   <img src="https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white" alt="Docker">
 </p>
 
@@ -20,39 +21,59 @@
 
 ## <img src="https://api.iconify.design/heroicons/document-text.svg?color=white" width="24" height="24" align="center"/> Sobre este Repositorio
 
-**EcoCanje** es un ecosistema integral de reciclaje urbano. Sin embargo, este repositorio contiene **exclusivamente la capa de Ingeniería de Datos y el Backend** (API). No incluye el firmware C++ de los dispositivos IoT ni la interfaz visual de la aplicación móvil.
+**EcoCanje** es un ecosistema integral de reciclaje urbano diseñado bajo el paradigma de computación distribuida (Edge-to-Cloud). Este repositorio contiene la implementación técnica completa de la **Etapa 2**, abarcando la orquestación de bases de datos políglotas en la nube y el simulador de hardware (Edge) que opera en las calles.
 
-El objetivo central de este componente es actuar como el orquestador principal: procesar la telemetría de alta velocidad de los contenedores inteligentes y servir los datos transaccionales a la aplicación ciudadana con mínima latencia.
+El sistema fue diseñado con alta tolerancia a fallos, asincronía de datos y consistencia eventual para soportar desconexiones de red, evitando el bloqueo de terminales IoT y asegurando una trazabilidad inmutable mediante auditorías cruzadas.
 
-## <img src="https://api.iconify.design/heroicons/server-stack.svg?color=white" width="24" height="24" align="center"/> Arquitectura Políglota
+---
 
-El sistema está diseñado bajo el paradigma de persistencia políglota, aislando las cargas de trabajo según su naturaleza algorítmica:
+## <img src="https://api.iconify.design/heroicons/server-stack.svg?color=white" width="24" height="24" align="center"/> Arquitectura de Datos y Lógica del Sistema
 
-- **MongoDB (Operacional / OLTP):** Estructura jerárquica desnormalizada para transacciones rápidas. Aloja el catálogo maestro de terminales y gestiona las búsquedas geoespaciales mediante índices `2dsphere`.
-- **Redis (Caché / Telemetría IoT):** Base de datos en memoria para soportar el alto flujo de eventos físicos. Administra el estado de llenado de los contenedores (semáforo de disponibilidad) en tiempo real.
-- **Apache Cassandra (Analítica / OLAP):** Motor columnar distribuido destinado a persistir el historial inmutable de depósitos para análisis analíticos a largo plazo.
+El sistema implementa una **Persistencia Políglota** estricta, derivando cada carga de trabajo transaccional al motor de base de datos que está matemáticamente optimizado para la tarea.
 
-## <img src="https://api.iconify.design/heroicons/rocket-launch.svg?color=white" width="24" height="24" align="center"/> Guía de Despliegue
+### 1. El Borde (Edge Computing y SQLite)
+La terminal física ("El Tacho") no depende de una conexión a internet constante para operar. 
+- Utiliza **SQLite** como una "caja negra" inmutable a nivel local para retener firmas criptográficas y acumular peso.
+- Si la nube se cae, la terminal continúa recibiendo reciclaje de los usuarios.
+- Implementa un proceso tipo daemon (`sync_daemon.py`) que purga el SQLite local únicamente cuando confirma la llegada de la telemetría a la nube.
 
-Para ejecutar el entorno en una máquina local de forma aislada:
+### 2. Flujo de Emisión de QR y Redis
+Para prevenir la saturación óptica del código QR impreso y mitigar ataques de doble gasto (Double-Spending):
+- **Short-Lived Handshake:** La terminal sube la carga pesada (JSON con firmas ECDSA y métricas) a **Redis**, recibiendo a cambio un Token corto. 
+- Al escanear el QR, el backend extrae el JSON usando un script atómico **Lua** e inmediatamente elimina la clave (TTL de 120s), impidiendo definitivamente que el mismo papel físico pueda ser reclamado dos veces.
+- **Redis** también actúa como un semáforo de latencia ultra-baja (sub-milisegundo) para reportar la capacidad física actual de los contenedores a los camiones recolectores sin congestionar los motores pesados.
 
-1. **Levantar la topología de red:**
-   ```bash
-   docker-compose up -d
-   ```
+### 3. Escritura Dual (Patrón SAGA)
+Una vez validado el QR efímero en la capa caché, el sistema impacta financieramente el registro bifurcando los datos:
+- **MongoDB (Operacional / OLTP):** Incrementa el saldo de incentivos del usuario de forma casi instantánea (`$inc`) y permite las consultas geoespaciales (`2dsphere`) para ubicar terminales cercanas.
+- **Apache Cassandra (Analítica / OLAP / Ledger):** Actúa como el gran libro mayor de contabilidad inmutable gubernamental. Registra anexos secuenciales (Append-Only) del peso, terminal y firma criptográfica. Nunca se borra una fila.
 
-2. **Inyectar índices y catálogo (Seeding):**
-   Dentro del contenedor del backend, es mandatorio inicializar los índices espaciales para evitar el bloqueo por escaneo O(N) del motor de MongoDB.
-   ```bash
-   cd backend
-   python seed.py
-   ```
+### 4. Reconciliación Financiera (Chaos Engineering)
+Si el Datacenter sufriese una desincronización abrupta (ej. caída de MongoDB durante una escritura dual), el sistema cuenta con un algoritmo asíncrono de Reconciliación (Patrón Q9) que recalcula el saldo exacto del ciudadano cruzando los balances en memoria contra la sumatoria de todas las transacciones históricas en Cassandra.
 
-3. **Ejecutar el servidor API:**
-   ```bash
-   uvicorn main:app --reload --host 0.0.0.0
-   ```
-   *La documentación interactiva de las rutas estará expuesta en: `http://localhost:8000/docs`*
+---
+
+## <img src="https://api.iconify.design/heroicons/rocket-launch.svg?color=white" width="24" height="24" align="center"/> Guía de Despliegue y Ejecución
+
+Para levantar la infraestructura completa en cualquier computadora (Windows/Linux/Mac) con Docker instalado:
+
+### Paso 1: Inicialización
+Posicionarse en el directorio raíz del proyecto y compilar los contenedores en modo asilado:
+```bash
+docker compose up -d --build
+```
+*Nota Técnica: Apache Cassandra (JVM) requiere de 40 a 60 segundos de inicialización en memoria antes de aceptar conexiones. Se recomienda esperar este lapso.*
+
+### Paso 2: Sembrado de Datos Base (Seeding)
+Para inicializar el catálogo base (terminales, usuarios y tarifas), ejecutar:
+```bash
+docker compose exec backend python seed.py
+```
+
+### Paso 3: Interfaces de Interacción (Mocks)
+Una vez estabilizada la red, los nodos de interacción quedan mapeados al Host principal:
+- **[Panel IoT Edge]**: Acceder a `http://localhost:8001`. Representa físicamente a la terminal inteligente ubicada en la vía pública. Permite generar cargas asíncronas y emitir Tokens.
+- **[Panel Nube Backend]**: Acceder a `http://localhost:8000`. Representa el clúster central del Datacenter. Contiene todos los métodos expuestos de los Patrones de Consulta (Q1 a Q9).
 
 ## <img src="https://api.iconify.design/heroicons/map.svg?color=white" width="24" height="24" align="center"/> Patrones de Acceso Implementados
 

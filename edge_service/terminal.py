@@ -73,8 +73,9 @@ class ECDSACryptoService(ICryptoService):
 
 class SQLiteLocalStorage(ILocalStorage):
     """Implementación de persistencia local en SQLite con garantías ACID WAL"""
-    def __init__(self, db_path: str = "ecocanje_edge.db"):
-        self.db_path = db_path
+    def __init__(self, db_path: str = None):
+        import os
+        self.db_path = db_path or os.getenv("SQLITE_DB_PATH", "ecocanje_edge.db")
         self._configurar_entorno_wal()
 
     def _configurar_entorno_wal(self):
@@ -151,7 +152,7 @@ class EcocanjeTerminal:
         material = self.hardware.clasificar_material_optico()
         peso_g = self.hardware.obtener_peso_neto()
         
-        id_tx = str(uuid.uuid4())[:8] # Genera id transaccional corto para el MVP
+        id_tx = str(uuid.uuid4())[:8] # Genera id transaccional corto
         timestamp = str(int(time.time()))
         
         # Cotización rápida local para cálculo del incentivo
@@ -235,8 +236,8 @@ if __name__ == "__main__":
     # EJECUCIÓN: Genera exactamente UNA carga única por llamada al script
     resultado_qr = terminal.procesar_ciclo_carga()
     
-    # Imprime la evidencia exacta del JSON listo para Lisandro
-    print("\n📸 [PANTALLA TFT TERMINAL: EMISIÓN DE CÓDIGO QR DINÁMICO]")
+    # Imprime el payload final generado por el Edge en consola
+    print("\n[PANTALLA TFT TERMINAL: EMISIÓN DE CÓDIGO QR DINÁMICO]")
     print(json.dumps(resultado_qr, indent=2))
     print("-----------------------------------------------------------------")
     
@@ -247,7 +248,7 @@ if __name__ == "__main__":
         # Se incrusta el JSON completo exacto en los módulos del QR
         qr.add_data(json.dumps(resultado_qr))
         qr.make(fit=True)
-        print("\n📱 [ESCANEAME CON LA APP (CÓDIGO QR REAL EMITIDO EN PANTALLA TFT)]")
+        print("\[ESCANEAME CON LA APP (CÓDIGO QR REAL EMITIDO EN PANTALLA TFT)]")
         qr.print_ascii(invert=True)
         print("-----------------------------------------------------------------\n")
     except ImportError:

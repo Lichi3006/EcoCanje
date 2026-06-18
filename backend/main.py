@@ -117,3 +117,39 @@ async def health_check():
             "cassandra": "cassandra_session" in db_clients
         }
     }
+
+@app.post("/sistema/reset", tags=["Infraestructura"])
+async def factory_reset():
+    """
+    Ruta de pánico para limpiar todas las bases de datos y plantar las semillas originales.
+    Ejecuta el script de inyección original.
+    """
+    import subprocess
+    import sys
+    try:
+        # Purgar Redis
+        if "redis" in db_clients:
+            await db_clients["redis"].flushall()
+            
+        # Purgar Cassandra
+        if "cassandra_session" in db_clients:
+            session = db_clients["cassandra_session"]
+            session.execute("TRUNCATE ecocanje_ks.eventos_terminales;")
+            session.execute("TRUNCATE ecocanje_ks.saturaciones_por_comuna;")
+            session.execute("TRUNCATE ecocanje_ks.depositos_ledger;")
+            
+        # Purgar MongoDB
+        if "mongodb" in db_clients:
+            db = db_clients["mongodb"]
+            await db.NodosDeRecepcion.drop()
+            await db.PerfilesUsuario.drop()
+            await db.TarifasMateriales.drop()
+            
+        # Correr seed.py para plantar datos base limpios
+        resultado = subprocess.run([sys.executable, "seed.py"], capture_output=True, text=True)
+        if resultado.returncode == 0:
+            return {"status": "SUCCESS", "message": "Bases de datos purgadas y reconstruidas a estado semilla."}
+        else:
+            return {"status": "ERROR", "message": "Fallo al correr seed.py", "logs": resultado.stderr}
+    except Exception as e:
+        return {"status": "CRITICAL_ERROR", "message": str(e)}

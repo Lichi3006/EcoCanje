@@ -109,14 +109,51 @@ async def sembrar_base_de_datos():
     from decimal import Decimal
     from datetime import datetime, timezone
     
-    await coleccion_perfiles.insert_one({
-        "id_usuario": "USR-1186420",
-        "nombre_titular": "Lisandro Eco",
-        "cvu": "0000003100010000000001",
-        "balance_incentivos": Decimal128(Decimal("1450.00")),
-        "ultima_actualizacion": datetime.now(timezone.utc)
-    })
-    print("[OK] PerfilUsuario creado (USR-1186420).")
+    await coleccion_perfiles.insert_many([
+        {
+            "id_usuario": "USR-1186420",
+            "nombre_titular": "Lisandro Forgione",
+            "cvu": "0000003100010000000001",
+            "balance_incentivos": Decimal128(Decimal("1450.00")),
+            "ultima_actualizacion": datetime.now(timezone.utc)
+        },
+        {
+            "id_usuario": "USR-1190410",
+            "nombre_titular": "Fernando Estevez",
+            "cvu": "0000003100010000000002",
+            "balance_incentivos": Decimal128(Decimal("0.00")),
+            "ultima_actualizacion": datetime.now(timezone.utc)
+        },
+        {
+            "id_usuario": "USR-1189034",
+            "nombre_titular": "Delfina Garcia",
+            "cvu": "0000003100010000000003",
+            "balance_incentivos": Decimal128(Decimal("0.00")),
+            "ultima_actualizacion": datetime.now(timezone.utc)
+        },
+        {
+            "id_usuario": "USR-1201818",
+            "nombre_titular": "Miguel Illanes",
+            "cvu": "0000003100010000000004",
+            "balance_incentivos": Decimal128(Decimal("0.00")),
+            "ultima_actualizacion": datetime.now(timezone.utc)
+        },
+        {
+            "id_usuario": "USR-1184761",
+            "nombre_titular": "Joaquin Riusech",
+            "cvu": "0000003100010000000005",
+            "balance_incentivos": Decimal128(Decimal("0.00")),
+            "ultima_actualizacion": datetime.now(timezone.utc)
+        },
+        {
+            "id_usuario": "USR-PROFESOR",
+            "nombre_titular": "Fernandez Alfonso Martin",
+            "cvu": "0000003100010000000006",
+            "balance_incentivos": Decimal128(Decimal("0.00")),
+            "ultima_actualizacion": datetime.now(timezone.utc)
+        }
+    ])
+    print("[OK] PerfilesUsuario creados para el equipo.")
 
     print("Sembrando Tarifas Base de Materiales en MongoDB...")
     coleccion_tarifas = db["TarifasMateriales"]

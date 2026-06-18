@@ -37,18 +37,24 @@ async def home(request: Request):
                 logBox.innerHTML += `\\n[SYS] Ejecutando: ${endpoint}...\\n`;
                 logBox.scrollTop = logBox.scrollHeight;
                 
+                const start_time = performance.now();
                 try {
                     const response = await fetch(endpoint, { method: 'POST' });
                     const result = await response.json();
+                    const end_time = performance.now();
+                    const ms = (end_time - start_time).toFixed(2);
+                    
                     if (result.log) {
-                        logBox.innerHTML += result.log + "\\n";
+                        logBox.innerHTML += `[Tardó: ${ms} ms]\n` + result.log + "\\n";
                     } else {
-                        logBox.innerHTML += JSON.stringify(result, null, 2) + "\\n";
+                        logBox.innerHTML += `[Tardó: ${ms} ms]\n` + JSON.stringify(result, null, 2) + "\\n";
                     }
                     logBox.scrollTop = logBox.scrollHeight;
                     actualizarEstado();
                 } catch (e) {
-                    logBox.innerHTML += `[ERROR] ${e}\\n`;
+                    const end_time = performance.now();
+                    const ms = (end_time - start_time).toFixed(2);
+                    logBox.innerHTML += `[ERROR - ${ms} ms] ${e}\\n`;
                 }
             }
 
@@ -69,15 +75,18 @@ async def home(request: Request):
     </head>
     <body>
         <div class="container">
-            <h1>Terminal IoT Edge - Modo Mantenimiento</h1>
+            <h1>Terminal IoT Edge</h1>
             <p style="color:#aaa;">Simulacion de hardware local. Los datos nacen aqui y luego se sincronizan con la nube.</p>
             
             <div class="panel">
                 <h3>Panel de Control</h3>
                 <button class="btn btn-blue" onclick="accion('/simular-carga')">Simular Carga de Material</button>
                 <button class="btn btn-blue" onclick="accion('/simular-carga-masiva')">x10 Cargas Masivas (Forzar Saturacion)</button>
+                <button class="btn btn-blue" onclick="accion('/generar-qr')" style="background-color: #ff9800; font-weight: bold;">Finalizar y Emitir QR</button>
                 <button class="btn" onclick="accion('/sincronizar')">Sincronizar a Nube (Sync Daemon)</button>
+                <button class="btn" onclick="accion('/estado-interno')" style="background-color: #673ab7;">Ver Datos Internos (SQLite)</button>
                 <button class="btn btn-red" onclick="document.getElementById('log').innerHTML=''">Limpiar Logs</button>
+                <button class="btn btn-red" onclick="accion('/limpiar-db-local')" style="background-color: #d32f2f;">Formatear Disco (Borrar SQLite)</button>
                 
                 <div style="margin-top: 20px; font-weight: bold; font-size: 18px; color: #ffeb3b;">
                     Eventos pendientes de sincronización (SQLite): <span id="lbl-pendientes">0</span><br>
@@ -129,6 +138,52 @@ async def sincronizar():
     except subprocess.CalledProcessError as e:
         return {"log": f"[ERROR] {e.stderr}\\n{e.stdout}"}
 
+@app.post("/limpiar-db-local")
+async def limpiar_db_local():
+    """
+    Formatea el disco duro virtual de la terminal (SQLite).
+    Borra la telemetría local y reinicia los contadores de peso al estado de fábrica.
+    """
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM telemetria_local")
+            cursor.execute("DELETE FROM depositos_pendientes")
+            conn.commit()
+        return {"log": "[SISTEMA] Disco duro formateado. Tablas locales de SQLite vaciadas a cero."}
+    except Exception as e:
+        return {"log": f"[ERROR CRÍTICO] Fallo al formatear disco: {str(e)}"}
+
+@app.post("/estado-interno")
+async def ver_estado_interno_sqlite():
+    import json
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            
+            cursor.execute("SELECT * FROM depositos_pendientes;")
+            depositos = [dict(row) for row in cursor.fetchall()]
+            
+            cursor.execute("SELECT * FROM telemetria_local;")
+            telemetria = [dict(row) for row in cursor.fetchall()]
+            
+            radiografia = {
+                "1_DEPOSITOS_PENDIENTES (Transacciones de Usuario)": depositos,
+                "2_TELEMETRIA_LOCAL (Salud de Hardware)": telemetria
+            }
+            
+            # Formatear para la consola
+            formateado = json.dumps(radiografia, indent=2, ensure_ascii=False)
+            mensaje = f"<br>========================================<br>"
+            mensaje += f"<b>[ESTADO INTERNO DE DISCO SQLITE]</b><br>"
+            mensaje += f"========================================<br>"
+            mensaje += f"<pre style='color: #00ff00; font-size: 13px; margin:0;'>{formateado}</pre><br>"
+            
+            return {"log": mensaje}
+    except Exception as e:
+        return {"log": f"[ERROR LECTURA DISCO] {str(e)}"}
+
 @app.get("/estado")
 async def get_estado():
     # Lee directamente de SQLite para mostrar el estado
@@ -140,7 +195,7 @@ async def get_estado():
             cursor.execute("SELECT COUNT(*) as c FROM telemetria_local WHERE sincronizado = 0;")
             pendientes = cursor.fetchone()["c"]
             
-            cursor.execute("SELECT SUM(valor_numerico) as s FROM telemetria_local WHERE tipo_evento = 'PESO_ACUMULADO_KG';")
+            cursor.execute("SELECT SUM(peso_kg) as s FROM depositos_pendientes;")
             row = cursor.fetchone()
             peso = row["s"] if row and row["s"] else 0.0
             
@@ -148,5 +203,51 @@ async def get_estado():
                 "pendientes": pendientes,
                 "peso_acumulado_kg": peso
             }
-    except Exception:
+    except Exception as e:
         return {"pendientes": 0, "peso_acumulado_kg": 0.0}
+
+@app.post("/generar-qr")
+async def generar_qr():
+    import json
+    import requests
+    import io
+    import subprocess
+    from contextlib import redirect_stdout
+    
+    # 1. Ejecutar el ciclo de hardware local
+    f = io.StringIO()
+    with redirect_stdout(f):
+        try:
+            subprocess.run(["python", "terminal.py"], capture_output=True, text=True, check=True)
+        except subprocess.CalledProcessError as e:
+            return {"log": f"[ERROR] {e.stderr}"}
+            
+    # 2. Instanciar para sacar el payload
+    from terminal import EcocanjeTerminal, MockHardwareService, ECDSACryptoService, SQLiteLocalStorage
+    term = EcocanjeTerminal(id_terminal="TERM-CABA-005", hardware=MockHardwareService(), crypto=ECDSACryptoService(), db_local=SQLiteLocalStorage(DB_PATH))
+    payload_qr = term.procesar_ciclo_carga()
+    
+    # 3. Mandar el payload al Backend (REST)
+    try:
+        respuesta = requests.post("http://backend:8000/transacciones/crear-token-qr", json=payload_qr, timeout=5)
+        if respuesta.status_code == 200:
+            token = respuesta.json().get("token_qr", "ERROR_TOKEN")
+            
+            # Generamos la URL de una API pública gratuita para renderizar visualmente el QR en HTML
+            qr_img_url = f"https://api.qrserver.com/v1/create-qr-code/?size=250x250&data={token}&bgcolor=000000&color=00ff00&margin=10"
+            
+            # Formateamos un HTML interactivo para la consola web
+            html_msg = f"<br>========================================<br>"
+            html_msg += f"<b>[PANTALLA TFT: CÓDIGO QR GENERADO]</b><br>"
+            html_msg += f"TOKEN: <span style='color:white; background:#333; padding:2px 5px;'>{token}</span><br>"
+            html_msg += f"Escanee este código con la aplicación móvil (Expira en 2 min):<br><br>"
+            html_msg += f"<img src='{qr_img_url}' style='border: 3px solid #555; border-radius: 5px;'><br>"
+            html_msg += f"========================================<br>"
+            
+            return {"log": html_msg}
+        else:
+            return {"log": f"<br>[ERROR BACKEND] Respuesta: {respuesta.text}"}
+    except Exception as e:
+        return {"log": f"<br>[ERROR RED] Falló comunicación: {str(e)}"}
+
+

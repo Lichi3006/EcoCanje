@@ -19,11 +19,11 @@ async def interfaz_basica_profesor():
             .subtitle { color: #aaaaaa; margin-bottom: 25px; font-size: 0.95em; }
             .container { max-width: 1000px; margin: auto; }
             .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 20px; }
-            .card { background-color: #2d2d2d; padding: 16px; border: 1px solid #444; border-left: 4px solid #4CAF50; border-radius: 5px; color: #ffffff; }
-            .card.mongo { border-left-color: #4CAF50; }
-            .card.redis { border-left-color: #3b82f6; }
-            .card.cassandra { border-left-color: #f97316; }
-            .card.multi { border-left-color: #a855f7; }
+            .card { background-color: #2d2d2d; padding: 16px; border: 2px solid #444; border-radius: 5px; color: #ffffff; }
+            .card.mongo { border-color: #4CAF50; }
+            .card.redis { border-color: #3b82f6; }
+            .card.cassandra { border-color: #f97316; }
+            .card.multi { border-color: #a855f7; }
             .card h3 { font-size: 0.95em; margin-bottom: 8px; color: #ffffff; }
             .card .db-tag { display: inline-block; font-size: 0.7em; padding: 2px 8px; border-radius: 10px; margin-bottom: 8px; font-weight: bold; }
             .db-tag.mongo { background: #1a3a1a; color: #4CAF50; border: 1px solid #4CAF50; }
@@ -50,7 +50,11 @@ async def interfaz_basica_profesor():
     </head>
     <body>
         <div class="container">
-            <h1>EcoCanje - Panel de Pruebas de consultas</h1>
+
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #555; padding-bottom: 10px; margin-bottom: 10px;">
+                <h1 style="border: none; margin: 0; padding: 0;">EcoCanje - Panel de Pruebas de consultas</h1>
+                <button onclick="llamarAPI('/sistema/reset', 'POST', {})" style="background-color: #f44336; width: auto; font-size: 0.9em; padding: 10px 20px;">Restaurar a Semilla Cero</button>
+            </div>
             
             <div class="legend">
                 <div class="legend-item"><div class="legend-dot mongo"></div> MongoDB</div>
@@ -60,7 +64,7 @@ async def interfaz_basica_profesor():
             </div>
             
             <div class="grid" style="margin-bottom: 20px;">
-                <div class="card multi card-full" style="border-left-color: #ff0000; background-color: #330000;">
+                <div class="card multi card-full" style="border-color: #ff0000; background-color: #2d2d2d;">
                     <span class="db-tag" style="background: #ff0000; color: #fff;">[!] Simulación de Fallos</span>
                     <h3>Control de Servicios (Apagado Forzado)</h3>
                     <p>Permite detener o reiniciar los contenedores de bases de datos para evaluar el comportamiento del sistema ante cortes de red o caídas.</p>
@@ -98,7 +102,7 @@ async def interfaz_basica_profesor():
                 <div class="card redis card-full">
                     <span class="db-tag redis">Redis</span>
                     <h3>Estado en Vivo de Memoria Efímera (Raw JSON)</h3>
-                    <p>Auditoria: Radiografía de la RAM. Muestra colas SAGA pendientes, tokens QR vivos y caché de IoT.</p>
+                    <p>Auditoria: Estado Interno de la RAM. Muestra colas SAGA pendientes, tokens QR vivos y caché de IoT.</p>
                     <button onclick="llamarAPI('/transacciones/auditoria_redis', 'GET')">Volcar Estado Redis</button>
                 </div>
                 <div class="card mongo">
@@ -147,7 +151,7 @@ async def interfaz_basica_profesor():
                         </div>
                         <div>
                             <label style="font-size: 0.75em; color: #888;">ID Usuario</label>
-                            <input type="text" id="q4-usr" value="USR-1186420" style="width: 100%; padding: 5px; background: #000; color: #0f0; border: 1px solid #444;">
+                            <input type="text" id="q4-usr" value="USR-PROFESOR" style="width: 100%; padding: 5px; background: #000; color: #0f0; border: 1px solid #444;">
                         </div>
                     </div>
                     <button onclick="llamarAPI('/transacciones/canje-qr', 'POST', {id_qr_transaccional: document.getElementById('q4-qr').value, id_usuario: document.getElementById('q4-usr').value})">Ejecutar Q4</button>
@@ -160,7 +164,7 @@ async def interfaz_basica_profesor():
                     <div style="display: flex; gap: 5px; margin-bottom: 5px;">
                         <div>
                             <label style="font-size: 0.75em; color: #888;">ID Usuario</label>
-                            <input type="text" id="q5-usr" value="USR-1186420" style="width: 100%; padding: 5px; background: #000; color: #0f0; border: 1px solid #444;">
+                            <input type="text" id="q5-usr" value="USR-PROFESOR" style="width: 100%; padding: 5px; background: #000; color: #0f0; border: 1px solid #444;">
                         </div>
                         <div>
                             <label style="font-size: 0.75em; color: #888;">ID Terminal</label>
@@ -176,8 +180,12 @@ async def interfaz_basica_profesor():
                             <label style="font-size: 0.75em; color: #888;">Kg</label>
                             <input type="text" id="q5-kg" value="1.5" style="width: 100%; padding: 5px; background: #000; color: #0f0; border: 1px solid #444;">
                         </div>
+                        <div>
+                            <label style="font-size: 0.75em; color: #888;">$ Monto</label>
+                            <input type="text" id="q5-monto" value="225.0" style="width: 100%; padding: 5px; background: #000; color: #0f0; border: 1px solid #444;">
+                        </div>
                     </div>
-                    <button onclick="llamarAPI('/transacciones/registro-entrega', 'POST', {id_deposito: 'DEP-UI-' + Math.floor(Math.random() * 10000), id_usuario: document.getElementById('q5-usr').value, id_terminal: document.getElementById('q5-term').value, tipo_material: document.getElementById('q5-mat').value, peso_kg: parseFloat(document.getElementById('q5-kg').value), firma_ecdsa: 'firma_demo_ui', timestamp_local: Math.floor(Date.now()/1000)})">Ejecutar Q5</button>
+                    <button onclick="llamarAPI('/transacciones/registro-entrega', 'POST', {id_deposito: 'DEP-UI-' + Math.floor(Math.random() * 10000), id_usuario: document.getElementById('q5-usr').value, id_terminal: document.getElementById('q5-term').value, tipo_material: document.getElementById('q5-mat').value, peso_kg: parseFloat(document.getElementById('q5-kg').value), monto_acreditado: parseFloat(document.getElementById('q5-monto').value), firma_ecdsa: 'firma_demo_ui', timestamp_local: Math.floor(Date.now()/1000)})">Ejecutar Q5</button>
                 </div>
                 
                 <div class="card mongo">
@@ -185,7 +193,7 @@ async def interfaz_basica_profesor():
                     <h3>Q6 - Saldo Billetera</h3>
                     <p>Consulta el balance actual de un ciudadano.</p>
                     <label style="font-size: 0.75em; color: #888;">ID de Usuario</label>
-                    <input type="text" id="q6-id" value="USR-1186420" style="width: 100%; padding: 5px; background: #000; color: #0f0; border: 1px solid #444; margin-bottom: 10px;">
+                    <input type="text" id="q6-id" value="USR-PROFESOR" style="width: 100%; padding: 5px; background: #000; color: #0f0; border: 1px solid #444; margin-bottom: 10px;">
                     <button onclick="llamarAPI(`/perfiles/${document.getElementById('q6-id').value}/saldo`, 'GET')">Ejecutar Q6</button>
                 </div>
                 
@@ -224,7 +232,7 @@ async def interfaz_basica_profesor():
                     <h3>Q9 - Reconciliacion Financiera</h3>
                     <p>Compara Cassandra vs MongoDB y repara saldos desincronizados.</p>
                     <label style="font-size: 0.75em; color: #888;">ID de Usuario</label>
-                    <input type="text" id="q9-id" value="USR-1186420" style="width: 100%; padding: 5px; background: #000; color: #0f0; border: 1px solid #444; margin-bottom: 10px;">
+                    <input type="text" id="q9-id" value="USR-PROFESOR" style="width: 100%; padding: 5px; background: #000; color: #0f0; border: 1px solid #444; margin-bottom: 10px;">
                     <button onclick="llamarAPI(`/transacciones/reconciliacion/${document.getElementById('q9-id').value}`, 'POST')">Ejecutar Q9</button>
                 </div>
             </div>
@@ -240,6 +248,7 @@ async def interfaz_basica_profesor():
                 const pre = document.getElementById('resultado');
                 pre.style.color = '#aaaaaa';
                 pre.innerText = "[SYS] Ejecutando consulta contra la base de datos...";
+                const start_time = performance.now();
                 try {
                     const opciones = { method: metodo };
                     if (body) {
@@ -248,11 +257,19 @@ async def interfaz_basica_profesor():
                     }
                     const response = await fetch(ruta, opciones);
                     const data = await response.json();
+                    const end_time = performance.now();
+                    const tiempo_ms = (end_time - start_time).toFixed(2);
+                    
                     pre.style.color = response.ok ? '#00ff00' : '#ff3333';
-                    pre.innerText = JSON.stringify(data, null, 4);
+                    let output = `[LATENCIA RED Y MOTOR]: ${tiempo_ms} ms\n`;
+                    output += `--------------------------------------------------\n`;
+                    output += JSON.stringify(data, null, 4);
+                    pre.innerText = output;
                 } catch (error) {
+                    const end_time = performance.now();
+                    const tiempo_ms = (end_time - start_time).toFixed(2);
                     pre.style.color = '#ff3333';
-                    pre.innerText = "[ERROR] Error de conexion: " + error;
+                    pre.innerText = `[FALLO - ${tiempo_ms} ms]\n[ERROR] Error de conexion: ` + error;
                 }
             }
         </script>

@@ -70,7 +70,7 @@ class EdgeSyncDaemon:
             for id_ev in ids_a_actualizar:
                 cursor.execute("UPDATE telemetria_local SET sincronizado = 1 WHERE id_evento = ?;", (id_ev,))
             
-            # 3. PROCESO DE PURGA FISICA (Lo que acordaste con tu compañero)
+            # 3. PROCESO DE PURGA FISICA
             print("[PURGA] Iniciando vaciado y optimización de almacenamiento en el hardware local...")
             cursor.execute("DELETE FROM telemetria_local WHERE sincronizado = 1;")
             conn.commit()
