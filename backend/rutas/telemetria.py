@@ -25,6 +25,7 @@ async def Q8_ingesta_telemetria_iot(eventos: List[EventoTelemetria]):
     """
     sesion_cassandra = db_clients.get("cassandra_session")
     mongo_db = db_clients.get("mongodb")
+    redis_client = db_clients.get("redis")
     
     if not sesion_cassandra:
         return {"error": "Cassandra no disponible en el clúster."}
@@ -46,6 +47,17 @@ async def Q8_ingesta_telemetria_iot(eventos: List[EventoTelemetria]):
             ))
             eventos_insertados += 1
             
+            # -------------------------------------------------------------
+            # INTEGRACIÓN CON PATRÓN Q3 (Semáforo de Capacidad en Redis)
+            # -------------------------------------------------------------
+            if evento.tipo_evento == "SATURACION_CONTENEDOR_PORCENTAJE" and redis_client:
+                color = "Rojo" if evento.alerta_estado == "CRITICAL" else ("Amarillo" if evento.alerta_estado == "WARNING" else "Verde")
+                await redis_client.hset(f"capacidad:{evento.id_terminal}", mapping={
+                    "porcentaje": str(evento.valor_numerico),
+                    "estado": color,
+                    "ultima_lectura": evento.timestamp_local
+                })
+
             # -------------------------------------------------------------
             # INTEGRACIÓN CON PATRÓN Q7 (Enriquecimiento en tiempo de ingesta)
             # -------------------------------------------------------------
