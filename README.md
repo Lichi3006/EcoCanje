@@ -45,7 +45,7 @@ El orquestador en la nube consolida los 9 patrones transaccionales definidos en 
 - **[Q2] Validación de Materiales (MongoDB):** Acceso atómico de ultra-baja latencia para consultar tarifas y materiales aceptados en el Edge.
 - **[Q3] Semáforo de Capacidad en Vivo (Redis):** Caché en memoria operando en microsegundos para reportar si la terminal física está en estado Verde, Amarillo o Rojo, dictando el ruteo logístico y alertando a los ciudadanos.
 - **[Q4] Validación Atómica QR (Redis):** Ejecución de scripts `Lua` para resolver la lógica de un solo uso (Anti-Replay) destruyendo el token efímero instantáneamente.
-- **[Q5] Escritura Dual Inmutable (Cassandra + Mongo):** Implementación SAGA. Registra la transacción de reciclaje inmutablemente en el motor columnar y acredita el saldo económico en la billetera virtual.
+- **[Q5] Escritura Dual Inmutable (Cassandra + Mongo):** Patrón de persistencia que registra la transacción de reciclaje inmutablemente en el motor columnar y simultáneamente acredita el saldo económico en la billetera virtual.
 - **[Q6] Historial Ciudadano (Cassandra):** Recuperación paginada del ledger físico ordenado cronológicamente para mostrar el extracto de entregas en la aplicación.
 - **[Q7] Analítica de Saturaciones por Comuna (Cassandra):** Ingesta enriquecida de incidentes para que el Gobierno diagnostique cuellos de botella geográficos a gran escala.
 - **[Q8] Ingesta de Telemetría IoT (Edge + Cassandra):** Sincronización masiva de eventos por lotes (Sync Daemon) desde la base SQLite del contenedor inteligente hacia la nube.
@@ -69,7 +69,7 @@ Para prevenir la saturación óptica del código impreso y mitigar ataques de do
 - **Validación Atómica (Q4):** Cuando el ciudadano escanea ese código y su celular envía el token (`QR-A1B2C3`) de regreso al backend, el servidor extrae el JSON original desde la clave de Redis (`handshake:QR-A1B2C3`) utilizando un script atómico **Lua** e inmediatamente la elimina (la cual tiene un TTL de 120 segundos). Esto impide matemáticamente que un mismo código físico pueda ser cobrado dos veces por distintos usuarios.
 - **Semáforo Multi-Consumo (Q3):** A medida que la IoT sincroniza su telemetría con la Nube, el sistema actualiza de forma atómica la capacidad del tacho en la memoria RAM de **Redis** (ej. `HSET capacidad:T1`). Esto genera un semáforo de estado (Verde: Vacío, Amarillo: Alerta, Rojo: Lleno) que opera con latencia sub-milisegundo (O(1)). Gracias a esta arquitectura *In-Memory*, miles de teléfonos celulares y camiones recolectores pueden consultar frenéticamente si el tacho está lleno sin sobrecargar jamás los motores de base de datos en disco (Mongo/Cassandra), asegurando una experiencia fluida al usuario final.
 
-### 3. Escritura Dual (Patrón SAGA)
+### 3. Escritura Dual y Desacople
 Una vez validado el código efímero en la capa caché, el sistema impacta financieramente el registro bifurcando los datos resolviendo el patrón de **Escritura Inmutable (Q5)**:
 - **MongoDB (Operacional / OLTP):** Incrementa el saldo de incentivos del usuario de forma casi instantánea (`$inc`).
 - **Apache Cassandra (Analítica / OLAP / Ledger):** Actúa como el gran libro mayor de contabilidad inmutable gubernamental. Registra anexos secuenciales (Append-Only) del peso, terminal y firma criptográfica. Nunca se borra una fila.
