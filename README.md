@@ -19,14 +19,19 @@
 
 ---
 
-## <img src="https://api.iconify.design/heroicons/document-text.svg?color=white" width="24" height="24" align="center"/> Contexto Académico y Propuesta Conceptual
+## <img src="https://api.iconify.design/heroicons/document-text.svg?color=white" width="24" height="24" align="center"/> Contexto Académico
 
 Este repositorio constituye la implementación técnica final para la cátedra de **Ingeniería de Datos II**. Su objetivo académico principal es demostrar el dominio práctico de la **Persistencia Políglota**, diseñando una arquitectura donde cada patrón de consulta o carga de trabajo (Workload) se asigne estrictamente al motor de base de datos que resulte matemáticamente y algorítmicamente más eficiente para ese fin específico.
 
-**El Ecosistema EcoCanje**
-EcoCanje es una solución tecnológica diseñada para revolucionar la gestión de residuos sólidos urbanos mediante la **gamificación e incentivos financieros**. La propuesta conceptual se basa en desplegar una red de terminales IoT ("Tachos Inteligentes") en la vía pública. Cuando un ciudadano deposita materiales (PET, Aluminio, Cartón), la máquina clasifica el material, lo pesa, y emite un token criptográfico impreso. El ciudadano escanea este comprobante con su celular y automáticamente recibe saldo en su billetera virtual.
+---
 
-El presente código abarca exclusivamente el Core Backend en la nube y el simulador de hardware de la calle (Edge). Fue diseñado bajo premisas de alta disponibilidad y consistencia eventual, garantizando que si la nube gubernamental pierde conexión, los tachos inteligentes puedan seguir operando de forma 100% autónoma en la calle, sincronizando los datos en diferido sin perder la trazabilidad de los fondos.
+## <img src="https://api.iconify.design/heroicons/beaker.svg?color=white" width="24" height="24" align="center"/> Alcance de la Prueba de Concepto (PoC)
+
+Debido a que este repositorio constituye una arquitectura de validación académica (Prueba de Concepto), ciertos procesos del hardware físico se encuentran virtualizados (Mocking) para permitir su ejecución en entornos de desarrollo aislados:
+
+- **Hardware y Botoneras Físicas:** Reemplazados por el Panel web del Edge IoT, el cual dispara los eventos lógicos del microcontrolador simulando la interacción ciudadana con la terminal.
+- **Cámaras de Inteligencia Artificial:** La latencia y certeza de clasificación de materiales (PET/Aluminio) está simulada mediante retardos matemáticos aleatorios en el código de la terminal, generando telemetría sintética.
+- **Escaneo de Código QR:** La interacción óptica de la cámara del teléfono móvil de un ciudadano se abstrajo en una carga REST directa enviando el token (ej. `QR-A1B2C3`) contra el endpoint transaccional del backend.
 
 ---
 
@@ -79,16 +84,6 @@ Fuera del dominio central (Core Backend) se contempla la existencia de una Aplic
 - **Mapas en Vivo (Q1):** La App consulta el backend para renderizar marcadores de los tachos más cercanos en un radio métrico utilizando las coordenadas GPS del celular del usuario.
 - **Catálogo y Tarifas (Q2):** La App muestra los materiales permitidos y el valor de canje actual consultando a MongoDB.
 - **Billetera y Extracto (Q6):** La App extrae desde Apache Cassandra la lista inmutable histórica de depósitos realizados por el ciudadano para generar su ticket y ver su evolución financiera.
-
----
-
-## <img src="https://api.iconify.design/heroicons/beaker.svg?color=white" width="24" height="24" align="center"/> Alcance de la Prueba de Concepto (PoC)
-
-Debido a que este repositorio constituye una arquitectura de validación académica (Prueba de Concepto), ciertos procesos del hardware físico se encuentran virtualizados (Mocking) para permitir su ejecución en entornos de desarrollo aislados:
-
-- **Hardware y Botoneras Físicas:** Reemplazados por el Panel web del Edge IoT, el cual dispara los eventos lógicos del microcontrolador.
-- **Cámaras de Inteligencia Artificial:** La latencia y certeza de clasificación de materiales plásticos y de aluminio está simulada mediante retardos matemáticos aleatorios en el código de la terminal, generando telemetría sintética (ej. métrica `IA_LATENCIA_CLASIFICACION_MS`).
-- **Escaneo de Código QR:** La interacción óptica de la cámara del teléfono móvil de un ciudadano se abstrajo en una carga REST directa enviando el token (ej. `QR-A1B2C3`) contra el endpoint transaccional del backend.
 
 ---
 
