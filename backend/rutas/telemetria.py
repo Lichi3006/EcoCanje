@@ -27,8 +27,10 @@ async def Q8_ingesta_telemetria_iot(eventos: List[EventoTelemetria]):
         sesion_cassandra = get_cassandra_session()
     except ConnectionError:
         sesion_cassandra = None
-    if not sesion_cassandra:
-        return {"error": "Cassandra no disponible en el cluster. Puede estar inicializando (esperar ~60s) o estar caida."}
+    try:
+        sesion_cassandra = get_cassandra_session()
+    except ConnectionError:
+        sesion_cassandra = None
 
     mongo_db = db_clients.get("mongodb")
     redis_client = db_clients.get("redis")
@@ -39,26 +41,32 @@ async def Q8_ingesta_telemetria_iot(eventos: List[EventoTelemetria]):
     for evento in eventos:
         try:
             # 1. Inserción estándar de telemetría global (Q8)
-            cql_q8 = """
-                INSERT INTO eventos_terminales 
-                (id_terminal, id_evento, tipo_evento, valor_numerico, alerta_estado, timestamp_local) 
-                VALUES (%s, %s, %s, %s, %s, %s)
-            """
-            sesion_cassandra.execute_async(cql_q8, (
-                evento.id_terminal, evento.id_evento, evento.tipo_evento, 
-                evento.valor_numerico, evento.alerta_estado, evento.timestamp_local
-            ))
-            eventos_insertados += 1
+            if sesion_cassandra:
+                cql_q8 = """
+                    INSERT INTO eventos_terminales 
+                    (id_terminal, id_evento, tipo_evento, valor_numerico, alerta_estado, timestamp_local) 
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                """
+                sesion_cassandra.execute_async(cql_q8, (
+                    evento.id_terminal, evento.id_evento, evento.tipo_evento, 
+                    evento.valor_numerico, evento.alerta_estado, evento.timestamp_local
+                ))
+                eventos_insertados += 1
+            else:
+                print(f"[FALLBACK Q8] Cassandra caída. Omitiendo guardado histórico de evento {evento.id_evento}.")
             
             # -------------------------------------------------------------
             # INTEGRACIÓN CON PATRÓN Q3 (Semáforo de Capacidad en Redis)
             # -------------------------------------------------------------
             if evento.tipo_evento == "SATURACION_CONTENEDOR_PORCENTAJE" and redis_client:
                 color = "Rojo" if evento.alerta_estado == "CRITICAL" else ("Amarillo" if evento.alerta_estado == "WARNING" else "Verde")
-                await redis_client.hset(f"capacidad:{evento.id_terminal}", mapping={
-                    "porcentaje": str(evento.valor_numerico),
-                    "estado": color,
-                    "ultima_lectura": evento.timestamp_local
+                capacidad_maxima = 250.0
+                nivel_en_kg = (evento.valor_numerico / 100.0) * capacidad_maxima
+                await redis_client.hset(f"cap:terminal:{evento.id_terminal}", mapping={
+                    "nivel_actual": str(round(nivel_en_kg, 2)),
+                    "capacidad_max": str(capacidad_maxima),
+                    "estado_semaforo": color,
+                    "timestamp_update": evento.timestamp_local
                 })
 
             # -------------------------------------------------------------

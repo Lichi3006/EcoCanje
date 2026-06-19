@@ -129,22 +129,22 @@ async def factory_reset():
     import sys
     try:
         # Purgar Redis
-        if "redis" in db_clients:
+        if "redis" in db_clients and db_clients["redis"]:
             await db_clients["redis"].flushall()
             
         # Purgar Cassandra
-        if "cassandra_session" in db_clients:
+        if "cassandra_session" in db_clients and db_clients["cassandra_session"]:
             session = db_clients["cassandra_session"]
             session.execute("TRUNCATE ecocanje_ks.eventos_terminales;")
             session.execute("TRUNCATE ecocanje_ks.saturaciones_por_comuna;")
             session.execute("TRUNCATE ecocanje_ks.depositos_ledger;")
             
         # Purgar MongoDB
-        if "mongodb" in db_clients:
+        if "mongodb" in db_clients and db_clients["mongodb"] is not None:
             db = db_clients["mongodb"]
             await db.NodosDeRecepcion.drop()
             await db.PerfilesUsuario.drop()
-            await db.TarifasMateriales.drop()
+            await db.CatalogoMateriales.drop()
             
         # Correr seed.py para plantar datos base limpios
         resultado = subprocess.run([sys.executable, "seed.py"], capture_output=True, text=True)
@@ -158,7 +158,11 @@ async def factory_reset():
                 for c_name in contenedores:
                     try:
                         container = client.containers.get(c_name)
-                        container.restart()
+                        if c_name == "ecocanje_cassandra":
+                            container.stop()
+                            container.start()
+                        else:
+                            container.restart()
                         mensajes_docker.append(f"{c_name} OK")
                     except Exception as ce:
                         mensajes_docker.append(f"{c_name} FALLO: {str(ce)}")

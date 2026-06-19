@@ -155,17 +155,17 @@ async def sembrar_base_de_datos():
     ])
     print("[OK] PerfilesUsuario creados para el equipo.")
 
-    print("Sembrando Tarifas Base de Materiales en MongoDB...")
-    coleccion_tarifas = db["TarifasMateriales"]
-    await coleccion_tarifas.drop()
-    await coleccion_tarifas.create_index("material", unique=True)
-    await coleccion_tarifas.insert_many([
-        {"material": "PET", "precio_kg": 150.0, "ultima_actualizacion": datetime.now(timezone.utc)},
-        {"material": "VIDRIO", "precio_kg": 80.0, "ultima_actualizacion": datetime.now(timezone.utc)},
-        {"material": "ALUMINIO", "precio_kg": 450.0, "ultima_actualizacion": datetime.now(timezone.utc)},
-        {"material": "CARTON", "precio_kg": 50.0, "ultima_actualizacion": datetime.now(timezone.utc)}
+    print("Sembrando CatalogoMateriales en MongoDB...")
+    coleccion_catalogo = db["CatalogoMateriales"]
+    await coleccion_catalogo.drop()
+    await coleccion_catalogo.create_index("id_material", unique=True)
+    await coleccion_catalogo.insert_many([
+        {"id_material": "MAT-PET-001", "nombre": "Plásticos PET", "valor_por_kg": Decimal128(Decimal("150.00")), "activo": True},
+        {"id_material": "MAT-VIDRIO-001", "nombre": "Vidrio Reciclable", "valor_por_kg": Decimal128(Decimal("80.00")), "activo": True},
+        {"id_material": "MAT-ALUMINIO-001", "nombre": "Latas de Aluminio", "valor_por_kg": Decimal128(Decimal("450.00")), "activo": True},
+        {"id_material": "MAT-CARTON-001", "nombre": "Cartón y Papel", "valor_por_kg": Decimal128(Decimal("50.00")), "activo": True}
     ])
-    print("[OK] TarifasMateriales creadas en base de datos.")
+    print("[OK] CatalogoMateriales creados en base de datos.")
 
     # Sembrando Token QR de prueba en Redis para el Patrón Q4
     print("Sembrando Token QR efímero de prueba en Redis (Q4)...")

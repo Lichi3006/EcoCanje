@@ -193,9 +193,9 @@ class EcocanjeTerminal:
         )
 
         # Log 3: Nivel de saturación del contenedor (Simulado con peso acumulado)
-        # Asumimos una capacidad máxima de 100 kg en el contenedor.
+        # Asumimos una capacidad máxima de 250 kg en el contenedor (alineado con la Nube).
         peso_total = self.db_local.obtener_peso_acumulado_kg()
-        saturacion_pct = min(100.0, round((peso_total / 100.0) * 100.0, 2))
+        saturacion_pct = min(100.0, round((peso_total / 250.0) * 100.0, 2))
         sat_alerta = "OK" if saturacion_pct < 80.0 else "CRITICAL"
         self.db_local.guardar_telemetria(
             str(uuid.uuid4())[:8], self.id_terminal, "SATURACION_CONTENEDOR_PORCENTAJE", saturacion_pct, sat_alerta, timestamp

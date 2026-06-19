@@ -152,3 +152,53 @@ async def Q2_consultar_materiales_autorizados(id_nodo: str):
     
     return await busqueda_mongo(consulta=consulta, proyeccion=proyeccion, mensaje="La consulta de materiales autorizados fue exitosa")
 
+# =========================================================================
+# PATRÓN Q3
+# =========================================================================
+
+@router.get("/capacidad/{id_terminal}")
+async def Q3_consultar_capacidad(id_terminal: str):
+    """
+    Patrón Q3: Capacidad en Tiempo Real (Redis + MongoDB)
+    Combina metadata estática de MongoDB con memoria efímera de Redis para
+    mostrar un semáforo de estado de la terminal.
+    """
+    from fastapi import HTTPException
+    
+    coleccion = db_clients["mongodb"]["NodosDeRecepcion"]
+    nodo = await coleccion.find_one(
+        {"terminales_fisicas.id_terminal": id_terminal},
+        {
+            "_id": 0, 
+            "id_nodo": 1, 
+            "nombre": 1, 
+            "terminales_fisicas": {"$elemMatch": {"id_terminal": id_terminal}}
+        }
+    )
+    
+    if not nodo or not nodo.get("terminales_fisicas"):
+        raise HTTPException(status_code=404, detail="Terminal no encontrada")
+        
+    terminal = nodo["terminales_fisicas"][0]
+    
+    redis_client = db_clients.get("redis")
+    capacidad_viva = None
+    if redis_client:
+        capacidad_viva = await redis_client.hgetall(f"cap:terminal:{id_terminal}")
+        
+    if not capacidad_viva:
+        capacidad_viva = {
+            "nivel_actual": "0.0",
+            "capacidad_max": "250.0",
+            "estado_semaforo": "Verde",
+            "timestamp_update": "Sin telemetría reciente"
+        }
+        
+    return {
+        "mensaje": "Consulta de capacidad en tiempo real exitosa",
+        "id_nodo": nodo.get("id_nodo"),
+        "nombre_nodo": nodo.get("nombre"),
+        "id_terminal": terminal.get("id_terminal"),
+        "estado_hardware": terminal.get("estado_operativo"),
+        "estado_saturacion": capacidad_viva
+    }

@@ -63,7 +63,7 @@ async def volcado_redis_crudo():
     import json
     
     # 1. Capacidades (Q3)
-    keys_capacidad = await redis_client.keys("capacidad:*")
+    keys_capacidad = await redis_client.keys("cap:terminal:*")
     capacidades = {}
     for k in keys_capacidad:
         capacidades[k] = await redis_client.hgetall(k)

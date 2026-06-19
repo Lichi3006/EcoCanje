@@ -49,6 +49,10 @@ class EdgeSyncDaemon:
                     respuesta = requests.post(self.backend_url, json=payload_lote, timeout=10)
                     if respuesta.status_code == 200:
                         datos = respuesta.json()
+                        if "error" in datos:
+                            print(f"[WAN-ERROR] Backend devolvió error lógico: {datos['error']}. Reintentando...")
+                            time.sleep(5)
+                            continue
                         print(f"[NUBE-ACK] Backend respondió HTTP 200: {datos.get('eventos_procesados_q8', 0)} eventos ingestados, "
                               f"{datos.get('saturaciones_enriquecidas_q7', 0)} saturaciones enriquecidas para Q7.")
                         exito = True
