@@ -26,7 +26,6 @@ async def obtener_perfil_consistente(id_usuario: str) -> dict:
     }
     
     # Intento 1: ReadConcern majority (producción con Replica Set)
-    nivel_consistencia = "majority"
     try:
         coleccion_majority = mongo_db.get_collection(
             "PerfilesUsuario", 
@@ -39,7 +38,6 @@ async def obtener_perfil_consistente(id_usuario: str) -> dict:
         pass
     
     # Intento 2: Fallback a lectura local (standalone sin Replica Set)
-    nivel_consistencia = "local (fallback standalone)"
     coleccion_local = mongo_db["PerfilesUsuario"]
     return await coleccion_local.find_one(consulta, proyeccion)
 

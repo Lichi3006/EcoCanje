@@ -1,7 +1,5 @@
 from fastapi import APIRouter
 from pydantic import BaseModel
-from typing import Dict, Any
-from cassandra.cluster import NoHostAvailable
 from database import db_clients, get_cassandra_session
 
 router = APIRouter(prefix="/transacciones", tags=["Dominio: Transacciones y Canjes (Redis/Fallback)"])
@@ -90,29 +88,6 @@ async def volcado_redis_crudo():
 # =========================================================================
 # PATRÓN Q4
 # =========================================================================
-
-@router.post("/crear-token-qr")
-async def crear_token_qr_iot(payload: dict):
-    """
-    Ruta interna para la Terminal IoT (Edge).
-    Recibe el payload completo de la transacción (kilos, firmas, id_terminal),
-    lo guarda en Redis con un TTL de 120s, y le devuelve un token corto a la máquina
-    para que dibuje el código QR en pantalla.
-    """
-    import uuid
-    redis_client = db_clients.get("redis")
-    if not redis_client:
-        return {"error": "Redis no disponible."}
-        
-    token = f"QR-{str(uuid.uuid4())[:6].upper()}"
-    clave_redis = f"handshake:{token}"
-    
-    # Insertar el diccionario como un Hash en Redis
-    await redis_client.hset(clave_redis, mapping=payload)
-    # Configurar el TTL de 120 segundos (2 minutos para escanear)
-    await redis_client.expire(clave_redis, 120)
-    
-    return {"token_qr": token}
 
 @router.post("/crear-token-qr")
 async def crear_token_qr_iot(payload: dict):
@@ -409,10 +384,8 @@ async def Q9_conciliacion_financiera(id_usuario: str):
 
         # Limpiamos el snapshot de Q9 si existia
         snapshot_previo = await coleccion_pendientes.find_one({"id_usuario": id_usuario})
-        snapshot_drenado = False
         if snapshot_previo:
             await coleccion_pendientes.delete_one({"id_usuario": id_usuario})
-            snapshot_drenado = True
 
         discrepancia = round(abs(total_ledger - saldo_mongodb), 2)
         reparado = False

@@ -248,7 +248,7 @@ if __name__ == "__main__":
         # Se incrusta el JSON completo exacto en los módulos del QR
         qr.add_data(json.dumps(resultado_qr))
         qr.make(fit=True)
-        print("\[ESCANEAME CON LA APP (CÓDIGO QR REAL EMITIDO EN PANTALLA TFT)]")
+        print("[ESCANEAME CON LA APP (CÓDIGO QR REAL EMITIDO EN PANTALLA TFT)]")
         qr.print_ascii(invert=True)
         print("-----------------------------------------------------------------\n")
     except ImportError:

@@ -1,6 +1,5 @@
 from fastapi import FastAPI
 from motor.motor_asyncio import AsyncIOMotorClient
-import redis.asyncio as redis
 from cassandra.cluster import Cluster
 import os
 
@@ -102,8 +101,6 @@ async def caos_control_contenedor(container_name: str, action: str):
             return {"error": "Acción no válida. Usa 'stop' o 'start'."}
     except Exception as e:
         return {"error": f"Fallo al intentar aplicar ingeniería de caos: {str(e)}"}
-
-from fastapi.responses import HTMLResponse
 
 from panel_backend import panel_router
 app.include_router(panel_router)

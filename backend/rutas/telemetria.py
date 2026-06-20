@@ -210,7 +210,7 @@ async def Q7_deteccion_saturaciones_por_comuna(numero_comuna: int, fecha_desde: 
                         "fecha_dia": "EN VIVO"
                     })
             return {
-                "mensaje": f"FALLBACK ACTIVADO: Cassandra offline. Mostrando saturaciones vivas en RAM (Redis).",
+                "mensaje": "FALLBACK ACTIVADO: Cassandra offline. Mostrando saturaciones vivas en RAM (Redis).",
                 "filtro_temporal": "Tiempo Real",
                 "total_incidentes": len(lista_resultados),
                 "resultados": lista_resultados

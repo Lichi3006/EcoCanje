@@ -1,6 +1,6 @@
 import os
 import time
-from cassandra.cluster import Cluster, NoHostAvailable
+from cassandra.cluster import Cluster
 
 db_clients = {}
 

@@ -175,9 +175,9 @@ async def ver_estado_interno_sqlite():
             
             # Formatear para la consola
             formateado = json.dumps(radiografia, indent=2, ensure_ascii=False)
-            mensaje = f"<br>========================================<br>"
-            mensaje += f"<b>[ESTADO INTERNO DE DISCO SQLITE]</b><br>"
-            mensaje += f"========================================<br>"
+            mensaje = "<br>========================================<br>"
+            mensaje += "<b>[ESTADO INTERNO DE DISCO SQLITE]</b><br>"
+            mensaje += "========================================<br>"
             mensaje += f"<pre style='color: #00ff00; font-size: 13px; margin:0;'>{formateado}</pre><br>"
             
             return {"log": mensaje}
@@ -203,12 +203,11 @@ async def get_estado():
                 "pendientes": pendientes,
                 "peso_acumulado_kg": peso
             }
-    except Exception as e:
+    except Exception:
         return {"pendientes": 0, "peso_acumulado_kg": 0.0}
 
 @app.post("/generar-qr")
 async def generar_qr():
-    import json
     import requests
     import io
     import subprocess
@@ -237,12 +236,12 @@ async def generar_qr():
             qr_img_url = f"https://api.qrserver.com/v1/create-qr-code/?size=250x250&data={token}&bgcolor=000000&color=00ff00&margin=10"
             
             # Formateamos un HTML interactivo para la consola web
-            html_msg = f"<br>========================================<br>"
-            html_msg += f"<b>[PANTALLA TFT: CÓDIGO QR GENERADO]</b><br>"
+            html_msg = "<br>========================================<br>"
+            html_msg += "<b>[PANTALLA TFT: CÓDIGO QR GENERADO]</b><br>"
             html_msg += f"TOKEN: <span style='color:white; background:#333; padding:2px 5px;'>{token}</span><br>"
-            html_msg += f"Escanee este código con la aplicación móvil (Expira en 2 min):<br><br>"
+            html_msg += "Escanee este código con la aplicación móvil (Expira en 2 min):<br><br>"
             html_msg += f"<img src='{qr_img_url}' style='border: 3px solid #555; border-radius: 5px;'><br>"
-            html_msg += f"========================================<br>"
+            html_msg += "========================================<br>"
             
             return {"log": html_msg}
         else:
