@@ -197,8 +197,8 @@ async def interfaz_basica_profesor():
                     <button onclick="llamarAPI(`/perfiles/${document.getElementById('q6-id').value}/saldo`, 'GET')">Ejecutar Q6</button>
                 </div>
                 
-                <div class="card cassandra">
-                    <span class="db-tag cassandra">Cassandra</span>
+                <div class="card multi">
+                    <span class="db-tag multi">Cassandra + MongoDB + Redis</span>
                     <h3>Q7 - Saturaciones por Comuna</h3>
                     <p>Historial analitico de contenedores llenos.</p>
                     <div style="display: flex; gap: 5px; margin-bottom: 10px;">

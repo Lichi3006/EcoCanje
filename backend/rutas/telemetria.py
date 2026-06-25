@@ -136,13 +136,13 @@ async def Q7_deteccion_saturaciones_por_comuna(numero_comuna: int, fecha_desde: 
     (Ejemplo formato de fecha: '2026-05-01')
     """
     try:
-        sesion_cassandra = get_cassandra_session()
-    except ConnectionError as e:
-        raise HTTPException(status_code=503, detail=str(e))
-    if not sesion_cassandra:
-        raise HTTPException(status_code=503, detail="Servicio de Cassandra no disponible")
-        
-    try:
+        try:
+            sesion_cassandra = get_cassandra_session()
+        except ConnectionError:
+            sesion_cassandra = None
+            
+        if not sesion_cassandra:
+            raise Exception("Servicio de Cassandra no disponible al iniciar Q7")
         # Primero revisamos si hay datos pendientes en Mongo (Fallback) y los subimos a Cassandra
         mongo_db = db_clients.get("mongodb")
         if mongo_db is not None:
